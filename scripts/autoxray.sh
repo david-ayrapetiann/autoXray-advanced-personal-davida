@@ -3897,10 +3897,6 @@ import json
 from pathlib import Path
 
 sub_file = Path('$CORE_PATH/subscription.json')
-if '$user_uuid':
-    target = Path('$sub_dir/${username}_${user_uuid}.json')
-else:
-    target = Path('$sub_dir/$username.json')
 data = json.loads(sub_file.read_text(encoding='utf-8'))
 
 user_uuid = '$user_uuid'
@@ -3920,7 +3916,10 @@ if isinstance(data, list) and len(data) > 0:
     reminder_prof['remarks'] = reminder
     data.append(reminder_prof)
 
-target.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+output_data = json.dumps(data, ensure_ascii=False, indent=2) + '\n'
+if '$user_uuid':
+    Path('$sub_dir/${username}_${user_uuid}.json').write_text(output_data, encoding='utf-8')
+Path('$sub_dir/$username.json').write_text(output_data, encoding='utf-8')
 "
 }
 
