@@ -11,3 +11,5 @@ __pycache__/
 secrets/
 cluster_key*
 users.json
+patch_*.py
+*.temp
