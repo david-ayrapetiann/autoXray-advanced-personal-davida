@@ -16,6 +16,9 @@ import hmac
 import hashlib
 import sqlite3
 import threading
+import html
+import ipaddress
+import secrets
 import subprocess
 import urllib.parse
 import concurrent.futures
@@ -24,13 +27,24 @@ from socketserver import ThreadingMixIn
 from pathlib import Path
 
 # --- CONFIGURATION ---
+# Dynamic environment detection
+if os.path.exists("/etc/vpn-davida"):
+    ETC_DIR = "/etc/vpn-davida"
+    APP_DIR = "/opt/vpn-davida-panel"
+    LOG_BASENAME = "/var/log/nginx/vpn-davida-access.log"
+else:
+    ETC_DIR = "/etc/vpn-cluster"
+    APP_DIR = "/opt/vpn-panel"
+    LOG_BASENAME = "/var/log/nginx/vpn-cluster-access.log"
+
 PORT = 8888
 HOST = "127.0.0.1"
+
 def get_secret_key() -> bytes:
     import secrets
     secret_path = Path("/etc/vpn-davida/jwt_secret")
     if not secret_path.exists():
-        secret_path = Path("/etc/vpn-cluster/jwt_secret")
+        secret_path = Path(f"{ETC_DIR}/jwt_secret")
     if not secret_path.exists():
         secret_path.parent.mkdir(parents=True, exist_ok=True)
         secret_path.write_bytes(secrets.token_bytes(32))
@@ -42,7 +56,8 @@ def get_secret_key() -> bytes:
 
 SECRET_KEY = get_secret_key()
 SESSION_DURATION_SEC = 86400 * 7  # 7 days
-MASTER_SECRET_FILE = Path("/etc/vpn-cluster/master_secret")
+
+MASTER_SECRET_FILE = Path(f"{ETC_DIR}/master_secret")
 
 _cached_master_secret = None
 _cached_secret_mtime = 0
@@ -108,7 +123,7 @@ def rotate_cluster_master_password(new_password: str) -> dict:
                 "ssh", "-i", str(CLUSTER_SSH_KEY), "-p", "22",
                 "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=4",
                 f"vpnadmin@{ip}",
-                "cat > /etc/vpn-cluster/master_secret && chmod 600 /etc/vpn-cluster/master_secret && awk '{print \"vpnadmin:\" $0}' /etc/vpn-cluster/master_secret | sudo -n chpasswd"
+                f"cat > {ETC_DIR}/master_secret && chmod 600 {ETC_DIR}/master_secret && awk \'{{print \"vpnadmin:\" $0}}\' {ETC_DIR}/master_secret | sudo -n chpasswd"
             ]
             res = subprocess.run(cmd, input=new_password, capture_output=True, text=True, timeout=8)
             if res.returncode == 0:
@@ -122,25 +137,25 @@ def rotate_cluster_master_password(new_password: str) -> dict:
         f"Выполнена ротация мастер-пароля кластера на узлах: {', '.join(updated)}",
         author="admin-web",
         category="CREDENTIAL_ROTATION",
-        files="/etc/vpn-cluster/master_secret, /etc/shadow",
+        files=f"{ETC_DIR}/master_secret, /etc/shadow",
         rollback="N/A (Security rotation)"
     )
 
     return {"success": True, "updated_nodes": updated, "errors": errors}
 
-USERS_FILE = Path("/etc/vpn-cluster/users.txt")
-PASSWORDS_FILE = Path("/etc/vpn-cluster/passwords.json")
+USERS_FILE = Path(f"{ETC_DIR}/users.txt")
+PASSWORDS_FILE = Path(f"{ETC_DIR}/passwords.json")
 CORE_PATH = Path("/var/www/vpn-ch.example.com/_core")
 WEB_PATH = Path("/var/www/vpn-ch.example.com")
-LOG_FILE = Path("/var/log/nginx/vpn-cluster-access.log")
+LOG_FILE = Path(LOG_BASENAME)
 DOMAIN = "vpn.example.com"
-DB_PATH = Path("/opt/vpn-panel/metrics.db")
-SYSTEM_MEMORY_FILE = Path("/etc/vpn-cluster/SYSTEM_MEMORY.md")
-CHANGELOG_FILE = Path("/etc/vpn-cluster/CHANGELOG.md")
-CLUSTER_SSH_KEY = Path("/etc/vpn-cluster/cluster_key")
+DB_PATH = Path(f"{APP_DIR}/metrics.db")
+SYSTEM_MEMORY_FILE = Path(f"{ETC_DIR}/SYSTEM_MEMORY.md")
+CHANGELOG_FILE = Path(f"{ETC_DIR}/CHANGELOG.md")
+CLUSTER_SSH_KEY = Path(f"{ETC_DIR}/cluster_key")
 
 
-NODES_FILE = Path("/etc/vpn-cluster/nodes.json")
+NODES_FILE = Path(f"{ETC_DIR}/nodes.json")
 _nodes_cache = None
 _nodes_mtime = 0
 _nodes_lock = threading.Lock()
@@ -168,7 +183,9 @@ _status_lock = threading.Lock()
 
 def init_db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=5) as conn:
+        conn.execute("PRAGMA journal_mode = WAL;")
+        conn.execute("PRAGMA busy_timeout = 5000;")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS node_pings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -345,8 +362,26 @@ def parse_ss_and_anycast(raw_text: str) -> dict:
 
 def poll_node(node: dict) -> dict:
     nid = node["id"]
-    ip = node["ip"]
+    ip = str(node.get("ip", "")).strip()
     remote_cmd = "sudo -n ss -ti sport = :443; echo '===ANYCAST==='; ping -c 1 -W 1 1.1.1.1 2>/dev/null"
+
+    try:
+        # Validate IP to prevent SSH argument injection (CWE-88)
+        if ip not in ("127.0.0.1", "localhost", "198.51.100.10"):
+            ipaddress.ip_address(ip)
+    except ValueError:
+        return {
+            "online": False,
+            "active_sessions": 0,
+            "client_rtt_p50": None,
+            "client_rtt_p95": None,
+            "rtt_var": 0.0,
+            "retrans_rate_pct": 0.0,
+            "anycast_ms": None,
+            "quality_score": 0,
+            "status_label": "invalid_ip",
+            "latency_ms": None,
+        }
 
     try:
         # Check if local node
@@ -800,6 +835,55 @@ def get_user_xray_traffic(username: str) -> dict:
 
 # --- USER PASSWORDS / PINs MANAGEMENT ---
 
+_pin_rate_lock = threading.Lock()
+_pin_failed_attempts = {}
+
+def is_pin_rate_limited(ip: str, username: str) -> bool:
+    now = time.time()
+    key = (str(ip).strip(), str(username).strip().lower())
+    with _pin_rate_lock:
+        attempts = [t for t in _pin_failed_attempts.get(key, []) if now - t < 300]
+        _pin_failed_attempts[key] = attempts
+        return len(attempts) >= 5
+
+def record_failed_pin_attempt(ip: str, username: str):
+    now = time.time()
+    key = (str(ip).strip(), str(username).strip().lower())
+    with _pin_rate_lock:
+        attempts = [t for t in _pin_failed_attempts.get(key, []) if now - t < 300]
+        attempts.append(now)
+        _pin_failed_attempts[key] = attempts
+
+def clear_pin_rate_limit(ip: str, username: str):
+    key = (str(ip).strip(), str(username).strip().lower())
+    with _pin_rate_lock:
+        _pin_failed_attempts.pop(key, None)
+
+def hash_pin(pin: str) -> str:
+    pin = str(pin).strip()
+    salt = secrets.token_hex(16)
+    key = hashlib.pbkdf2_hmac("sha256", pin.encode("utf-8"), salt.encode("utf-8"), 100000)
+    return f"pbkdf2:sha256:100000${salt}${key.hex()}"
+
+def verify_hash(pin: str, stored_hash: str) -> bool:
+    if not stored_hash or not pin:
+        return False
+    pin = str(pin).strip()
+    # Backward compatibility with legacy plaintext passwords
+    if not stored_hash.startswith("pbkdf2:sha256:"):
+        return hmac.compare_digest(stored_hash.strip().encode("utf-8"), pin.encode("utf-8"))
+    try:
+        parts = stored_hash.split("$")
+        if len(parts) != 3:
+            return False
+        iterations = int(parts[0].split(":")[-1])
+        salt = parts[1].encode("utf-8")
+        expected_key = parts[2]
+        key = hashlib.pbkdf2_hmac("sha256", pin.encode("utf-8"), salt, iterations)
+        return hmac.compare_digest(key.hex(), expected_key)
+    except Exception:
+        return False
+
 def load_passwords() -> dict:
     if not PASSWORDS_FILE.exists():
         return {}
@@ -811,29 +895,37 @@ def load_passwords() -> dict:
 def save_passwords(data: dict):
     PASSWORDS_FILE.parent.mkdir(parents=True, exist_ok=True)
     PASSWORDS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        PASSWORDS_FILE.chmod(0o600)
+    except Exception:
+        pass
 
 def get_user_pin(username: str) -> str:
     pwds = load_passwords()
     if username in pwds and pwds[username]:
-        return pwds[username]
-    seed = f"{username}_vpnadmin_2026"
-    pin = str((int(hashlib.md5(seed.encode()).hexdigest()[:4], 16) % 9000) + 1000)
-    pwds[username] = pin
-    save_passwords(pwds)
+        val = str(pwds[username]).strip()
+        # If legacy plaintext, return so admin can see it; if hashed, return placeholder
+        if not val.startswith("pbkdf2:sha256:"):
+            return val
+        return "••••"
+    # Cryptographically secure random 4-digit PIN (CWE-330/CWE-338 fix)
+    pin = str(secrets.randbelow(9000) + 1000)
+    set_user_pin(username, pin)
     return pin
 
 def set_user_pin(username: str, pin: str):
     username = username.strip()
-    pin = pin.strip()
+    pin = str(pin).strip()
     if not pin:
         raise ValueError("Пароль/PIN не может быть пустым")
     pwds = load_passwords()
-    pwds[username] = pin
+    # Store cryptographic salted hash (CWE-256 fix)
+    pwds[username] = hash_pin(pin)
     save_passwords(pwds)
 
 def get_user_uuid(username: str) -> str:
     try:
-        users_file = "/etc/vpn-cluster/users.json"
+        users_file = f"{ETC_DIR}/users.json"
         if os.path.exists(users_file):
             import json
             with open(users_file, "r") as f:
@@ -845,30 +937,27 @@ def get_user_uuid(username: str) -> str:
 
 def verify_user_pin(username: str, pin: str) -> bool:
     username = username.strip()
-    pin = pin.strip()
-    if not pin:
+    pin = str(pin).strip()
+    if not pin or not username:
         return False
-    if pin == get_master_password():
-        return True
 
     pwds = load_passwords()
 
-    if username in pwds and pwds[username]:
-        if hmac.compare_digest(pwds[username].encode(), pin.encode()):
-            return True
-
-    for k, v in pwds.items():
-        if k.lower() == username.lower() and v:
-            if hmac.compare_digest(v.encode(), pin.encode()):
-                return True
-
-    uname_clean = "".join(c for c in username if c.isalnum() or c in "_-").lower()
-    if uname_clean:
+    matched_key = None
+    if username in pwds and verify_hash(pin, pwds[username]):
+        matched_key = username
+    else:
         for k, v in pwds.items():
-            k_clean = "".join(c for c in k if c.isalnum() or c in "_-").lower()
-            if k_clean == uname_clean and v:
-                if hmac.compare_digest(v.encode(), pin.encode()):
-                    return True
+            if k.lower() == username.lower() and verify_hash(pin, v):
+                matched_key = k
+                break
+
+    if matched_key:
+        # Transparent upgrade to salted hash on first successful login
+        if not pwds[matched_key].startswith("pbkdf2:sha256:"):
+            pwds[matched_key] = hash_pin(pin)
+            save_passwords(pwds)
+        return True
 
     return False
 
@@ -887,6 +976,13 @@ def log_system_memory(description: str, author: str = "agent", category: str = "
     CHANGELOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     ts = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
     date_header = time.strftime("%Y-%m-%d", time.gmtime())
+
+    # Sanitize inputs against Stored XSS
+    description = html.escape(str(description).strip())
+    author = html.escape(str(author).strip())
+    category = html.escape(str(category).strip())
+    files = html.escape(str(files).strip())
+    rollback = html.escape(str(rollback).strip())
 
     current_content = ""
     if CHANGELOG_FILE.exists():
@@ -912,13 +1008,16 @@ def create_token(data: str) -> str:
     sig = hmac.new(SECRET_KEY, payload.encode(), hashlib.sha256).hexdigest()
     return f"{payload}:{sig}"
 
-def verify_token(token: str) -> bool:
+def verify_token(token: str, required_role: str = "admin") -> bool:
     if not token:
         return False
     parts = token.split(":")
     if len(parts) != 3:
         return False
     data, timestamp_str, sig = parts
+    # CWE-347 fix: Validate role/user payload
+    if required_role and data != required_role:
+        return False
     try:
         ts = int(timestamp_str)
         if time.time() - ts > SESSION_DURATION_SEC:
@@ -949,7 +1048,7 @@ _log_cache = {
 
 def parse_all_users_stats():
     global _log_cache
-    log_files = sorted(glob.glob("/var/log/nginx/vpn-cluster-access.log*"))
+    log_files = sorted(glob.glob(f"{LOG_BASENAME}*"))
     if not log_files:
         return {}
 
@@ -1127,7 +1226,7 @@ class DavidaHandler(BaseHTTPRequestHandler):
         auth_header = self.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header[7:].strip()
-            if token == get_master_password() or verify_token(token):
+            if token == get_master_password() or verify_token(token, required_role="admin"):
                 return True
         secret_header = self.headers.get("X-Davida-Secret", "")
         if secret_header == get_master_password():
@@ -1137,7 +1236,7 @@ class DavidaHandler(BaseHTTPRequestHandler):
             item = item.strip()
             if item.startswith("davida_auth="):
                 token = item[len("davida_auth="):]
-                return verify_token(token)
+                return verify_token(token, required_role="admin")
         return False
 
     def do_OPTIONS(self):
@@ -1292,7 +1391,14 @@ class DavidaHandler(BaseHTTPRequestHandler):
             if not username or not pin:
                 self.send_error_json("Имя пользователя и PIN обязательны", status=400)
                 return
+
+            client_ip = self.headers.get("X-Real-IP") or self.client_address[0]
+            if is_pin_rate_limited(client_ip, username):
+                self.send_error_json("Слишком много неверных попыток. Подождите 5 минут.", status=429)
+                return
+
             if verify_user_pin(username, pin):
+                clear_pin_rate_limit(client_ip, username)
                 host = self.headers.get("Host", DOMAIN).split(":")[0]
                 if not host or "skam" not in host:
                     host = DOMAIN
@@ -1308,6 +1414,7 @@ class DavidaHandler(BaseHTTPRequestHandler):
                     "pin": pin
                 })
             else:
+                record_failed_pin_attempt(client_ip, username)
                 self.send_error_json("Неверный пароль / PIN", status=403)
             return
 

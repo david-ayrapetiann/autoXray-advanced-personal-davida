@@ -230,8 +230,8 @@ write_landing_page() {
   local nnect_dir="$WEB_PATH/nnect"
   
   local user_uuid=""
-  if [[ -f "/etc/vpn-cluster/users.json" ]]; then
-    user_uuid=$(jq -r --arg u "$username" '.[$u] // empty' "/etc/vpn-cluster/users.json")
+  if [[ -f "$ETC_DIR/users.json" ]]; then
+    user_uuid=$(jq -r --arg u "$username" '.[$u] // empty' "$ETC_DIR/users.json")
   fi
   local sub_filename="$username.json"
   if [[ -n "$user_uuid" ]]; then
@@ -3883,12 +3883,12 @@ make_user_subscription() {
   mkdir -p "$sub_dir"
 
   # Lookup personal UUID from users.json
-  if [[ -f "/etc/vpn-cluster/users.json" ]]; then
-    user_uuid=$(jq -r --arg u "$username" '.[$u] // empty' "/etc/vpn-cluster/users.json")
+  if [[ -f "$ETC_DIR/users.json" ]]; then
+    user_uuid=$(jq -r --arg u "$username" '.[$u] // empty' "$ETC_DIR/users.json")
   fi
   if [[ -z "$user_uuid" ]]; then
     user_uuid=$(xray uuid 2>/dev/null || cat /proc/sys/kernel/random/uuid)
-    jq --arg u "$username" --arg id "$user_uuid" '.[$u] = $id' "/etc/vpn-cluster/users.json" > /tmp/u.json && mv /tmp/u.json "/etc/vpn-cluster/users.json"
+    jq --arg u "$username" --arg id "$user_uuid" '.[$u] = $id' "$ETC_DIR/users.json" > /tmp/u.json && mv /tmp/u.json "$ETC_DIR/users.json"
   fi
 
   # Inject personal UUID and email into all profiles, preserving core remarks
@@ -4080,8 +4080,8 @@ print_user_stats() {
   local username="$1"
   local page_path="/nnect/$username.html"
   local user_uuid=""
-  if [[ -f "/etc/vpn-cluster/users.json" ]]; then
-    user_uuid=$(jq -r --arg u "$username" '.[$u] // empty' "/etc/vpn-cluster/users.json")
+  if [[ -f "$ETC_DIR/users.json" ]]; then
+    user_uuid=$(jq -r --arg u "$username" '.[$u] // empty' "$ETC_DIR/users.json")
   fi
   local sub_filename="$username.json"
   if [[ -n "$user_uuid" ]]; then
@@ -4901,8 +4901,8 @@ EOF
 check_headers() {
   local username="${1:-alice}"
   local user_uuid=""
-  if [[ -f "/etc/vpn-cluster/users.json" ]]; then
-    user_uuid=$(jq -r --arg u "$username" '.[$u] // empty' "/etc/vpn-cluster/users.json")
+  if [[ -f "$ETC_DIR/users.json" ]]; then
+    user_uuid=$(jq -r --arg u "$username" '.[$u] // empty' "$ETC_DIR/users.json")
   fi
   local sub_filename="$username.json"
   if [[ -n "$user_uuid" ]]; then
@@ -4918,8 +4918,8 @@ check_headers() {
 check_subscription() {
   local username="${1:-alice}"
   local user_uuid=""
-  if [[ -f "/etc/vpn-cluster/users.json" ]]; then
-    user_uuid=$(jq -r --arg u "$username" '.[$u] // empty' "/etc/vpn-cluster/users.json")
+  if [[ -f "$ETC_DIR/users.json" ]]; then
+    user_uuid=$(jq -r --arg u "$username" '.[$u] // empty' "$ETC_DIR/users.json")
   fi
   local sub_filename="$username.json"
   if [[ -n "$user_uuid" ]]; then
