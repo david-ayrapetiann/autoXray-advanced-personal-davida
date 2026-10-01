@@ -831,6 +831,18 @@ def set_user_pin(username: str, pin: str):
     pwds[username] = pin
     save_passwords(pwds)
 
+def get_user_uuid(username: str) -> str:
+    try:
+        users_file = "/etc/vpn-cluster/users.json"
+        if os.path.exists(users_file):
+            import json
+            with open(users_file, "r") as f:
+                data = json.load(f)
+                return data.get(username, "")
+    except Exception:
+        pass
+    return ""
+
 def verify_user_pin(username: str, pin: str) -> bool:
     username = username.strip()
     pin = pin.strip()
@@ -1005,7 +1017,9 @@ def parse_user_stats(username: str) -> dict:
     })
 
     pin = get_user_pin(username)
-    sub_path = f"/sub/{username}.json"
+    user_uuid = get_user_uuid(username)
+    sub_filename = f"{username}_{user_uuid}.json" if user_uuid else f"{username}.json"
+    sub_path = f"/sub/{sub_filename}"
 
     sorted_ips = sorted(raw["ips"].items(), key=lambda x: x[1], reverse=True)
     top_ips = [{"ip": ip, "count": cnt} for ip, cnt in sorted_ips[:10]]
@@ -1282,7 +1296,9 @@ class DavidaHandler(BaseHTTPRequestHandler):
                 host = self.headers.get("Host", DOMAIN).split(":")[0]
                 if not host or "skam" not in host:
                     host = DOMAIN
-                sub_url = f"https://{host}/sub/{username}.json"
+                user_uuid = get_user_uuid(username)
+                sub_filename = f"{username}_{user_uuid}.json" if user_uuid else f"{username}.json"
+                sub_url = f"https://{host}/sub/{sub_filename}"
                 happ_url = f"happ://add/{sub_url}"
                 self.send_json({
                     "success": True,

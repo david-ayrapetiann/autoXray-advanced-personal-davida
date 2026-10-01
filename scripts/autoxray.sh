@@ -228,7 +228,17 @@ make_backup() {
 write_landing_page() {
   local username="$1"
   local nnect_dir="$WEB_PATH/nnect"
-  local sub_url="https://$DOMAIN/sub/$username.json"
+  
+  local user_uuid=""
+  if [[ -f "/etc/vpn-cluster/users.json" ]]; then
+    user_uuid=$(jq -r --arg u "$username" '.[$u] // empty' "/etc/vpn-cluster/users.json")
+  fi
+  local sub_filename="$username.json"
+  if [[ -n "$user_uuid" ]]; then
+    sub_filename="${username}_${user_uuid}.json"
+  fi
+  
+  local sub_url="https://$DOMAIN/sub/$sub_filename"
   local happ_add_url="happ://add/$sub_url"
   local page_file="$nnect_dir/$username.html"
 
@@ -3887,7 +3897,10 @@ import json
 from pathlib import Path
 
 sub_file = Path('$CORE_PATH/subscription.json')
-target = Path('$sub_dir/$username.json')
+if '$user_uuid':
+    target = Path('$sub_dir/${username}_${user_uuid}.json')
+else:
+    target = Path('$sub_dir/$username.json')
 data = json.loads(sub_file.read_text(encoding='utf-8'))
 
 user_uuid = '$user_uuid'
@@ -4039,6 +4052,7 @@ del_user() {
   mv "$USERS_FILE.tmp" "$USERS_FILE"
   rm -f "$WEB_PATH/nnect/$username.html"
   rm -f "$WEB_PATH/sub/$username.json"
+  rm -f "$WEB_PATH/sub/${username}_*.json"
   echo -e "${GRN}✅ Пользователь удалён:${NC} $username"
 }
 
@@ -4066,7 +4080,15 @@ read_project_logs() {
 print_user_stats() {
   local username="$1"
   local page_path="/nnect/$username.html"
-  local sub_path="/sub/$username.json"
+  local user_uuid=""
+  if [[ -f "/etc/vpn-cluster/users.json" ]]; then
+    user_uuid=$(jq -r --arg u "$username" '.[$u] // empty' "/etc/vpn-cluster/users.json")
+  fi
+  local sub_filename="$username.json"
+  if [[ -n "$user_uuid" ]]; then
+    sub_filename="${username}_${user_uuid}.json"
+  fi
+  local sub_path="/sub/$sub_filename"
   local tmp
   tmp="$(mktemp)"
 
@@ -4879,16 +4901,32 @@ EOF
 
 check_headers() {
   local username="${1:-alice}"
-  echo -e "${YEL}Проверка HTTP-заголовков подписки:${NC}"
-  echo "https://$DOMAIN/sub/$username.json"
+  local user_uuid=""
+  if [[ -f "/etc/vpn-cluster/users.json" ]]; then
+    user_uuid=$(jq -r --arg u "$username" '.[$u] // empty' "/etc/vpn-cluster/users.json")
+  fi
+  local sub_filename="$username.json"
+  if [[ -n "$user_uuid" ]]; then
+    sub_filename="${username}_${user_uuid}.json"
+  fi
+  echo -e "${YEL}HTTP Headers:${NC}"
+  echo "https://$DOMAIN/sub/$sub_filename"
   echo
-  curl -I "https://$DOMAIN/sub/$username.json" | sed -n '/profile-title/p;/profile-update-interval/p;/routing:/p;/routing-enable/p;/HTTP/p;/content-type/p'
+  curl -I "https://$DOMAIN/sub/$sub_filename" | sed -n '/profile-title/p;/profile-update-interval/p;/routing:/p;/routing-enable/p;/HTTP/p;/content-type/p'
 }
 
 
 check_subscription() {
   local username="${1:-alice}"
-  local file="$WEB_PATH/sub/$username.json"
+  local user_uuid=""
+  if [[ -f "/etc/vpn-cluster/users.json" ]]; then
+    user_uuid=$(jq -r --arg u "$username" '.[$u] // empty' "/etc/vpn-cluster/users.json")
+  fi
+  local sub_filename="$username.json"
+  if [[ -n "$user_uuid" ]]; then
+    sub_filename="${username}_${user_uuid}.json"
+  fi
+  local file="$WEB_PATH/sub/$sub_filename"
   echo -e "${YEL}Проверка профилей в подписке:${NC}"
   echo "$file"
   echo
