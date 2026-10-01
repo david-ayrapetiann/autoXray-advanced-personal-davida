@@ -9,6 +9,10 @@ WorkingDirectory=/opt/vpn-panel
 ExecStart=/usr/bin/python3 /opt/vpn-panel/davida_core.py
 Restart=always
 RestartSec=3
+NoNewPrivileges=yes
+ProtectSystem=full
+PrivateTmp=yes
+ReadWritePaths=/etc/vpn-cluster /opt/vpn-panel
 
 [Install]
 WantedBy=multi-user.target

@@ -26,7 +26,21 @@ from pathlib import Path
 # --- CONFIGURATION ---
 PORT = 8888
 HOST = "127.0.0.1"
-SECRET_KEY = b"davida-vpn-secret-key-2026"
+def get_secret_key() -> bytes:
+    import secrets
+    secret_path = Path("/etc/vpn-davida/jwt_secret")
+    if not secret_path.exists():
+        secret_path = Path("/etc/vpn-cluster/jwt_secret")
+    if not secret_path.exists():
+        secret_path.parent.mkdir(parents=True, exist_ok=True)
+        secret_path.write_bytes(secrets.token_bytes(32))
+        try:
+            secret_path.chmod(0o600)
+        except Exception:
+            pass
+    return secret_path.read_bytes()
+
+SECRET_KEY = get_secret_key()
 SESSION_DURATION_SEC = 86400 * 7  # 7 days
 MASTER_SECRET_FILE = Path("/etc/vpn-cluster/master_secret")
 
@@ -58,6 +72,9 @@ def rotate_cluster_master_password(new_password: str) -> dict:
     new_password = new_password.strip()
     if len(new_password) < 10:
         raise ValueError("Пароль должен содержать не менее 10 символов")
+        
+    if any(c in new_password for c in ['\n', '\r', "'", '"', ':', ';']):
+        raise ValueError("Пароль содержит недопустимые символы")
 
     # 1. Update local secret file
     MASTER_SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -91,9 +108,9 @@ def rotate_cluster_master_password(new_password: str) -> dict:
                 "ssh", "-i", str(CLUSTER_SSH_KEY), "-p", "22",
                 "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=4",
                 f"vpnadmin@{ip}",
-                f"echo -n '{new_password}' > /etc/vpn-cluster/master_secret && chmod 600 /etc/vpn-cluster/master_secret && echo 'vpnadmin:{new_password}' | sudo -n chpasswd"
+                "cat > /etc/vpn-cluster/master_secret && chmod 600 /etc/vpn-cluster/master_secret && awk '{print \"vpnadmin:\" $0}' /etc/vpn-cluster/master_secret | sudo -n chpasswd"
             ]
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=8)
+            res = subprocess.run(cmd, input=new_password, capture_output=True, text=True, timeout=8)
             if res.returncode == 0:
                 updated.append(nid)
             else:
@@ -1227,6 +1244,11 @@ class DavidaHandler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         length = int(self.headers.get("Content-Length", 0))
+        
+        if length > 65536:
+            self.send_error_json("Payload too large", status=413)
+            return
+            
         body = self.rfile.read(length) if length > 0 else b"{}"
 
         try:

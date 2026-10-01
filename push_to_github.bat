@@ -4,7 +4,7 @@ echo ========================================================
 echo   Загрузка VPN Cluster в ваш репозиторий GitHub
 echo ========================================================
 echo.
-echo Репозиторий: https://github.com/david-ayrapetiann/autoXray-advanced-personal-davida.git
+echo Репозиторий: https://github.com/your-username/autoXray-advanced-personal-davida.git
 echo Ветка: main
 echo.
 echo Отправка файлов...
