@@ -4,23 +4,10 @@ echo ========================================================
 echo   Загрузка VPN Cluster в ваш репозиторий GitHub
 echo ========================================================
 echo.
-set /p REPO_URL="Введите URL вашего GitHub репозитория (например, https://github.com/username/vpn-cluster.git): "
-
-if "%REPO_URL%"=="" (
-    echo [ОШИБКА] URL не может быть пустым.
-    pause
-    exit /b 1
-)
-
+echo Репозиторий: https://github.com/david-ayrapetiann/autoXray-advanced-personal-davida.git
+echo Ветка: main
 echo.
-echo [1/3] Проверка remote origin...
-git remote remove origin 2>nul
-git remote add origin %REPO_URL%
-
-echo [2/3] Проверка ветки main...
-git branch -M main
-
-echo [3/3] Отправка на GitHub (откроется окно авторизации если нужно)...
+echo Отправка файлов...
 git push -u origin main
 
 if %ERRORLEVEL% EQU 0 (
@@ -30,7 +17,8 @@ if %ERRORLEVEL% EQU 0 (
     echo ========================================================
 ) else (
     echo.
-    echo [ОШИБКА] Не удалось отправить. Проверьте права доступа и URL.
+    echo [ОШИБКА] Не удалось отправить. Проверьте подключение или права.
 )
 
+echo.
 pause
