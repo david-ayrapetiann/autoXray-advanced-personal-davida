@@ -1,0 +1,26 @@
+[
+  {
+    "id": "ch",
+    "name": "🇨🇭 Швейцария",
+    "dc": "Infomaniak",
+    "ip": "198.51.100.10",
+    "port": 443,
+    "amnezia_url": ""
+  },
+  {
+    "id": "ee",
+    "name": "🇪🇪 Эстония",
+    "dc": "Infonet / Astra",
+    "ip": "198.51.100.20",
+    "port": 443,
+    "amnezia_url": "vpn://YOUR_AMNEZIA_PROFILE_KEY"
+  },
+  {
+    "id": "de",
+    "name": "🇩🇪 Германия",
+    "dc": "Dataforest",
+    "ip": "198.51.100.30",
+    "port": 443,
+    "amnezia_url": ""
+  }
+]

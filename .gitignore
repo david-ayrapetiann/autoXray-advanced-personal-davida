@@ -1,0 +1,13 @@
+.env
+*.db
+*.sqlite3
+*.key
+*.pem
+*.crt
+*.bak*
+*.log
+__pycache__/
+*.pyc
+secrets/
+cluster_key*
+users.json
