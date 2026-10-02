@@ -32,10 +32,16 @@ if os.path.exists("/etc/vpn-davida"):
     ETC_DIR = "/etc/vpn-davida"
     APP_DIR = "/opt/vpn-davida-panel"
     LOG_BASENAME = "/var/log/nginx/vpn-davida-access.log"
+    SSH_PORT = "23432"
+    SSH_USER = "vpnadmin"
+    LOCAL_IPS = ("127.0.0.1", "localhost", "198.51.100.11")
 else:
     ETC_DIR = "/etc/vpn-cluster"
     APP_DIR = "/opt/vpn-panel"
     LOG_BASENAME = "/var/log/nginx/vpn-cluster-access.log"
+    SSH_PORT = "22"
+    SSH_USER = "vpnadmin"
+    LOCAL_IPS = ("127.0.0.1", "localhost", "198.51.100.10")
 
 PORT = 8888
 HOST = "127.0.0.1"
@@ -100,7 +106,7 @@ def rotate_cluster_master_password(new_password: str) -> dict:
         pass
 
     try:
-        subprocess.run(["sudo", "-n", "chpasswd"], input=f"vpnadmin:{new_password}\n", text=True, timeout=5)
+        subprocess.run(["sudo", "-n", "chpasswd"], input=f"{SSH_USER}:{new_password}\n", text=True, timeout=5)
     except Exception:
         pass
 
@@ -363,11 +369,11 @@ def parse_ss_and_anycast(raw_text: str) -> dict:
 def poll_node(node: dict) -> dict:
     nid = node["id"]
     ip = str(node.get("ip", "")).strip()
-    remote_cmd = "sudo -n ss -ti sport = :443; echo '===ANYCAST==='; ping -c 1 -W 1 1.1.1.1 2>/dev/null"
+    remote_cmd = "ss -ti sport = :443; echo '===ANYCAST==='; (ping -c 1 -W 1 1.1.1.1 2>/dev/null || true)"
 
     try:
         # Validate IP to prevent SSH argument injection (CWE-88)
-        if ip not in ("127.0.0.1", "localhost", "198.51.100.10"):
+        if ip not in LOCAL_IPS:
             ipaddress.ip_address(ip)
     except ValueError:
         return {
@@ -385,22 +391,23 @@ def poll_node(node: dict) -> dict:
 
     try:
         # Check if local node
-        is_local = ip in ("127.0.0.1", "localhost", "198.51.100.10")
+        is_local = ip in LOCAL_IPS
         if is_local:
             res = subprocess.run(["bash", "-c", remote_cmd], capture_output=True, text=True, timeout=5)
         else:
             ssh_cmd = [
                 "ssh",
                 "-i", str(CLUSTER_SSH_KEY),
-                "-p", "22",
+                "-p", SSH_PORT,
                 "-o", "StrictHostKeyChecking=no",
                 "-o", "ConnectTimeout=3",
-                f"vpnadmin@{ip}",
+                "--",
+                f"{SSH_USER}@{ip}",
                 remote_cmd
             ]
             res = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=7)
 
-        if res.returncode == 0 and res.stdout:
+        if (res.returncode == 0 or "===ANYCAST===" in (res.stdout or "")) and res.stdout:
             parsed = parse_ss_and_anycast(res.stdout)
             parsed["latency_ms"] = parsed["client_rtt_p50"] if parsed["client_rtt_p50"] else parsed["anycast_ms"]
             return parsed
