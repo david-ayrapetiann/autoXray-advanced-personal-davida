@@ -35,6 +35,9 @@ if os.path.exists("/etc/vpn-davida"):
     SSH_PORT = "23432"
     SSH_USER = "vpnadmin"
     LOCAL_IPS = ("127.0.0.1", "localhost", "198.51.100.11")
+    DOMAIN = "vpn.example.com"
+    WEB_PATH = Path("/var/www/vpn-ch.example.com")
+    CORE_PATH = Path("/var/www/vpn-ch.example.com/_core")
 else:
     ETC_DIR = "/etc/vpn-cluster"
     APP_DIR = "/opt/vpn-panel"
@@ -42,6 +45,9 @@ else:
     SSH_PORT = "22"
     SSH_USER = "vpnadmin"
     LOCAL_IPS = ("127.0.0.1", "localhost", "198.51.100.10")
+    DOMAIN = "vpn.example.com"
+    WEB_PATH = Path("/var/www/vpn-ch.example.com")
+    CORE_PATH = Path("/var/www/vpn-ch.example.com/_core")
 
 PORT = 8888
 HOST = "127.0.0.1"
@@ -151,10 +157,7 @@ def rotate_cluster_master_password(new_password: str) -> dict:
 
 USERS_FILE = Path(f"{ETC_DIR}/users.txt")
 PASSWORDS_FILE = Path(f"{ETC_DIR}/passwords.json")
-CORE_PATH = Path("/var/www/vpn-ch.example.com/_core")
-WEB_PATH = Path("/var/www/vpn-ch.example.com")
 LOG_FILE = Path(LOG_BASENAME)
-DOMAIN = "vpn.example.com"
 DB_PATH = Path(f"{APP_DIR}/metrics.db")
 SYSTEM_MEMORY_FILE = Path(f"{ETC_DIR}/SYSTEM_MEMORY.md")
 CHANGELOG_FILE = Path(f"{ETC_DIR}/CHANGELOG.md")
@@ -1176,7 +1179,7 @@ def add_new_user(username: str, pin: str = None) -> bool:
 
     script_path = "/root/autoXRAY_davida_custom.sh"
     if os.path.exists(script_path):
-        subprocess.run(["bash", script_path, "sync", "vpn-ch.example.com"], check=False)
+        subprocess.run(["bash", script_path, "sync", DOMAIN], check=False)
     return True
 
 def delete_user(username: str) -> bool:
@@ -1191,6 +1194,8 @@ def delete_user(username: str) -> bool:
             f.write(f"{u}\n")
 
     (WEB_PATH / "sub" / f"{username}.json").unlink(missing_ok=True)
+    for p in (WEB_PATH / "sub").glob(f"{username}_*.json"):
+        p.unlink(missing_ok=True)
     (WEB_PATH / "nnect" / f"{username}.html").unlink(missing_ok=True)
 
     pwds = load_passwords()
@@ -1202,7 +1207,7 @@ def delete_user(username: str) -> bool:
 def run_sync() -> str:
     script_path = "/root/autoXRAY_davida_custom.sh"
     if os.path.exists(script_path):
-        res = subprocess.run(["bash", script_path, "sync", "vpn-ch.example.com"], capture_output=True, text=True)
+        res = subprocess.run(["bash", script_path, "sync", DOMAIN], capture_output=True, text=True)
         return res.stdout
     return "Local sync completed"
 
