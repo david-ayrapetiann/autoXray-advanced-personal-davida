@@ -4304,7 +4304,10 @@ routing = {
         "domain:kinopoisk.ru", "domain:ivi.ru", "domain:start.ru", "domain:smotrim.ru"
     ],
     "DirectIp": ["geoip:private", "geoip:ru"],
-    "ProxySites": [],
+    "ProxySites": [
+        "domain:telegram.org", "domain:t.me", "domain:telegram.me",
+        "domain:telegra.ph", "domain:cdn-telegram.org", "domain:telesco.pe"
+    ],
     "ProxyIp": [],
     "BlockSites": ["geosite:category-ads", "geosite:win-spy"],
     "BlockIp": [],
@@ -4360,7 +4363,9 @@ server {
         default_type application/json;
         add_header profile-title "\$vpn_davida_profile_title" always;
         add_header profile-update-interval "3" always;
-        add_header Access-Control-Expose-Headers "profile-title,profile-update-interval" always;
+        add_header routing "happ://routing/onadd/$route_b64" always;
+        add_header routing-enable "1" always;
+        add_header Access-Control-Expose-Headers "profile-title,profile-update-interval,routing,routing-enable" always;
         add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0" always;
         try_files \$uri =404;
     }
@@ -4783,9 +4788,22 @@ routing = {
     "Geositeurl": "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat",
     "LastUpdated": "1775206108",
     "DnsHosts": {},
-    "DirectSites": ["geosite:category-ru", "geosite:private"],
-    "DirectIp": ["geoip:private"],
-    "ProxySites": [],
+    "DirectSites": [
+        "geosite:category-ru", "geosite:private",
+        "regexp:\\.ru$", "regexp:\\.рф$",
+        "domain:yandex.ru", "domain:yandex.com", "domain:yastatic.net", "domain:yandex.net", "domain:ya.ru",
+        "domain:vk.com", "domain:vk.ru", "domain:vkuseraudio.net", "domain:mail.ru", "domain:ok.ru", "domain:rutube.ru",
+        "domain:gosuslugi.ru", "domain:mos.ru", "domain:nalog.gov.ru", "domain:customs.gov.ru",
+        "domain:ozon.ru", "domain:wildberries.ru", "domain:wb.ru", "domain:avito.ru", "domain:youla.ru",
+        "domain:sberbank.ru", "domain:sber.ru", "domain:tbank.ru", "domain:alfabank.ru", "domain:vtb.ru", "domain:psbank.ru",
+        "domain:2gis.ru",
+        "domain:kinopoisk.ru", "domain:ivi.ru", "domain:start.ru", "domain:smotrim.ru"
+    ],
+    "DirectIp": ["geoip:private", "geoip:ru"],
+    "ProxySites": [
+        "domain:telegram.org", "domain:t.me", "domain:telegram.me",
+        "domain:telegra.ph", "domain:cdn-telegram.org", "domain:telesco.pe"
+    ],
     "ProxyIp": [],
     "BlockSites": ["geosite:category-ads", "geosite:win-spy"],
     "BlockIp": [],
@@ -4865,7 +4883,9 @@ server {
         default_type application/json;
         add_header profile-title "\$vpn_davida_profile_title" always;
         add_header profile-update-interval "3" always;
-        add_header Access-Control-Expose-Headers "profile-title,profile-update-interval" always;
+        add_header routing "happ://routing/onadd/$route_b64" always;
+        add_header routing-enable "1" always;
+        add_header Access-Control-Expose-Headers "profile-title,profile-update-interval,routing,routing-enable" always;
         add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0" always;
         try_files \$uri =404;
     }
