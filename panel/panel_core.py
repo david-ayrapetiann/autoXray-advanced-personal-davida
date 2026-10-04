@@ -205,6 +205,7 @@ def init_db():
             );
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pings ON node_pings(node_id, timestamp);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pings_timestamp ON node_pings(timestamp);")
 
         conn.execute("""
             CREATE TABLE IF NOT EXISTS node_telemetry (
@@ -223,6 +224,7 @@ def init_db():
             );
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_telemetry ON node_telemetry(node_id, timestamp);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_telemetry_timestamp ON node_telemetry(timestamp);")
 
         conn.execute("""
             CREATE TABLE IF NOT EXISTS user_xray_traffic (
@@ -232,6 +234,48 @@ def init_db():
                 last_seen INTEGER DEFAULT 0,
                 is_online INTEGER DEFAULT 0,
                 sessions_count INTEGER DEFAULT 0
+            );
+        """)
+
+        # Long-term rollups: raw node samples stay 7 days; hourly rollups stay 90 days.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS node_stats_hourly (
+                hour_ts INTEGER NOT NULL,
+                node_id TEXT NOT NULL,
+                sample_count INTEGER NOT NULL DEFAULT 0,
+                online_count INTEGER NOT NULL DEFAULT 0,
+                uptime_pct REAL,
+                avg_ping_ms REAL,
+                avg_client_rtt_p50 REAL,
+                avg_client_rtt_p95 REAL,
+                max_client_rtt_p95 REAL,
+                avg_rtt_var REAL,
+                avg_retrans_rate_pct REAL,
+                avg_anycast_ms REAL,
+                avg_quality_score REAL,
+                avg_active_sessions REAL,
+                PRIMARY KEY (hour_ts, node_id)
+            );
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_node_stats_hourly_node_hour ON node_stats_hourly(node_id, hour_ts);")
+
+        # Per-user history begins at deployment; pre-existing cumulative totals are not reconstructable by day.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_traffic_daily (
+                day_ts INTEGER NOT NULL,
+                username TEXT NOT NULL,
+                bytes_down INTEGER NOT NULL DEFAULT 0,
+                bytes_up INTEGER NOT NULL DEFAULT 0,
+                active_seconds INTEGER NOT NULL DEFAULT 0,
+                last_seen INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (day_ts, username)
+            );
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_user_traffic_daily_user_day ON user_traffic_daily(username, day_ts);")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS stats_meta (
+                key TEXT PRIMARY KEY,
+                value INTEGER NOT NULL
             );
         """)
 
@@ -270,6 +314,94 @@ def record_telemetry_entry(timestamp: int, node_id: str, data: dict):
             ))
     except Exception:
         pass
+
+def rollup_completed_node_hours(conn, now_ts: int) -> int:
+    """Idempotently summarize completed UTC hours before raw rows are pruned."""
+    complete_before = (int(now_ts) // 3600) * 3600
+    state = conn.execute(
+        "SELECT value FROM stats_meta WHERE key = 'node_hourly_last_hour'"
+    ).fetchone()
+
+    if state is not None:
+        start_hour = int(state[0]) + 3600
+    else:
+        first_telemetry = conn.execute("SELECT MIN(timestamp) FROM node_telemetry").fetchone()[0]
+        first_ping = conn.execute("SELECT MIN(timestamp) FROM node_pings").fetchone()[0]
+        first_values = [int(v) for v in (first_telemetry, first_ping) if v is not None]
+        start_hour = (min(first_values) // 3600) * 3600 if first_values else complete_before
+
+    if start_hour < complete_before:
+        ping_rows = conn.execute("""
+            SELECT CAST(timestamp / 3600 AS INTEGER) * 3600 AS hour_ts,
+                   node_id, COUNT(*), SUM(COALESCE(online, 0)), AVG(latency_ms)
+            FROM node_pings
+            WHERE timestamp >= ? AND timestamp < ?
+            GROUP BY hour_ts, node_id
+        """, (start_hour, complete_before)).fetchall()
+        telemetry_rows = conn.execute("""
+            SELECT CAST(timestamp / 3600 AS INTEGER) * 3600 AS hour_ts,
+                   node_id, COUNT(*), SUM(COALESCE(online, 0)),
+                   AVG(client_rtt_p50), AVG(client_rtt_p95), MAX(client_rtt_p95),
+                   AVG(rtt_var), AVG(retrans_rate_pct), AVG(anycast_ms),
+                   AVG(quality_score), AVG(active_sessions)
+            FROM node_telemetry
+            WHERE timestamp >= ? AND timestamp < ?
+            GROUP BY hour_ts, node_id
+        """, (start_hour, complete_before)).fetchall()
+
+        pings = {(int(r[0]), r[1]): r[2:] for r in ping_rows}
+        telemetry = {(int(r[0]), r[1]): r[2:] for r in telemetry_rows}
+        records = []
+        for hour_ts, node_id in sorted(set(pings) | set(telemetry)):
+            p = pings.get((hour_ts, node_id))
+            t = telemetry.get((hour_ts, node_id))
+            sample_count = int(t[0] if t else p[0])
+            online_count = int(t[1] if t else p[1])
+            uptime_pct = round(online_count * 100.0 / sample_count, 2) if sample_count else 0.0
+            records.append((
+                hour_ts, node_id, sample_count, online_count, uptime_pct,
+                p[2] if p else None,
+                *(t[2:] if t else (None, None, None, None, None, None, None, None))
+            ))
+
+        if records:
+            conn.executemany("""
+                INSERT INTO node_stats_hourly (
+                    hour_ts, node_id, sample_count, online_count, uptime_pct, avg_ping_ms,
+                    avg_client_rtt_p50, avg_client_rtt_p95, max_client_rtt_p95,
+                    avg_rtt_var, avg_retrans_rate_pct, avg_anycast_ms,
+                    avg_quality_score, avg_active_sessions
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(hour_ts, node_id) DO UPDATE SET
+                    sample_count=excluded.sample_count,
+                    online_count=excluded.online_count,
+                    uptime_pct=excluded.uptime_pct,
+                    avg_ping_ms=excluded.avg_ping_ms,
+                    avg_client_rtt_p50=excluded.avg_client_rtt_p50,
+                    avg_client_rtt_p95=excluded.avg_client_rtt_p95,
+                    max_client_rtt_p95=excluded.max_client_rtt_p95,
+                    avg_rtt_var=excluded.avg_rtt_var,
+                    avg_retrans_rate_pct=excluded.avg_retrans_rate_pct,
+                    avg_anycast_ms=excluded.avg_anycast_ms,
+                    avg_quality_score=excluded.avg_quality_score,
+                    avg_active_sessions=excluded.avg_active_sessions
+            """, records)
+
+    conn.execute("""
+        INSERT INTO stats_meta (key, value) VALUES ('node_hourly_last_hour', ?)
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value
+    """, (complete_before - 3600,))
+    return len(records) if start_hour < complete_before else 0
+
+def cleanup_metrics_db(now_ts: int) -> int:
+    """Roll up complete hours, then prune raw and aggregated metric history."""
+    with sqlite3.connect(DB_PATH, timeout=10) as conn:
+        rolled_rows = rollup_completed_node_hours(conn, now_ts)
+        conn.execute("DELETE FROM node_pings WHERE timestamp < ?", (now_ts - (7 * 86400),))
+        conn.execute("DELETE FROM node_telemetry WHERE timestamp < ?", (now_ts - (7 * 86400),))
+        conn.execute("DELETE FROM node_stats_hourly WHERE hour_ts < ?", (now_ts - (90 * 86400),))
+        conn.execute("DELETE FROM user_traffic_daily WHERE day_ts < ?", (now_ts - (365 * 86400),))
+    return rolled_rows
 
 def parse_ss_and_anycast(raw_text: str) -> dict:
     parts = raw_text.split("===ANYCAST===")
@@ -447,7 +579,8 @@ def metrics_collector_loop():
     """Polls all cluster nodes every 15 seconds in parallel (Stealth & Zero Overhead)."""
     global _latest_node_status
     time.sleep(2)
-    clean_counter = 0
+    # Run one retention/backfill pass on startup, then once per hour.
+    clean_counter = 239
 
     while True:
         ts = int(time.time())
@@ -492,12 +625,11 @@ def metrics_collector_loop():
         if clean_counter >= 240:  # 240 * 15s = 3600s
             clean_counter = 0
             try:
-                with sqlite3.connect(DB_PATH, timeout=5) as conn:
-                    conn.execute("DELETE FROM node_pings WHERE timestamp < ?", (ts - (7 * 86400),))
-                    conn.execute("DELETE FROM node_telemetry WHERE timestamp < ?", (ts - (7 * 86400),))
-                    conn.execute("VACUUM;")
-            except Exception:
-                pass
+                rolled_rows = cleanup_metrics_db(ts)
+                if rolled_rows:
+                    print(f"[metrics] rolled up {rolled_rows} node-hour rows", flush=True)
+            except Exception as e:
+                print(f"[metrics] rollup/retention failed: {e}", flush=True)
 
         time.sleep(15)
 
@@ -690,6 +822,7 @@ def format_bytes(size_bytes: int) -> str:
 def xray_stats_collector_loop():
     """Runs in background every 10 seconds, queries local Xray API (127.0.0.1:10085)."""
     time.sleep(3)
+    last_online_sample_ts = None
     while True:
         try:
             proc = subprocess.run(
@@ -730,6 +863,7 @@ def xray_stats_collector_loop():
                                 user_deltas[uname]["up"] += delta
 
                 online_users = set()
+                online_query_ok = False
                 try:
                     proc_onl = subprocess.run(
                         ["xray", "api", "statsgetallonlineusers", "--server=127.0.0.1:10085"],
@@ -739,8 +873,10 @@ def xray_stats_collector_loop():
                         onl_data = json.loads(proc_onl.stdout)
                         if isinstance(onl_data, list):
                             online_users = set(onl_data)
+                            online_query_ok = True
                         elif isinstance(onl_data, dict):
                             online_users = set(onl_data.get("users", []))
+                            online_query_ok = True
                 except Exception:
                     pass
 
@@ -748,9 +884,20 @@ def xray_stats_collector_loop():
                     if d["down"] > 0 or d["up"] > 0:
                         online_users.add(uname)
 
+                # Estimate active time from successful polls; cap gaps so pauses do not overcount.
+                active_sample_seconds = 0
+                if online_query_ok:
+                    if last_online_sample_ts is not None:
+                        active_sample_seconds = max(0, min(now_ts - last_online_sample_ts, 30))
+                    last_online_sample_ts = now_ts
+
+                traffic_users = set(user_deltas) | online_users
+                day_ts = (now_ts // 86400) * 86400  # UTC epoch-day bucket
                 with sqlite3.connect(DB_PATH, timeout=5) as conn:
-                    for uname, d in user_deltas.items():
+                    for uname in traffic_users:
+                        d = user_deltas.get(uname, {"down": 0, "up": 0})
                         is_onl = 1 if uname in online_users else 0
+                        last_seen = now_ts if (is_onl or d["down"] > 0 or d["up"] > 0) else 0
                         conn.execute("""
                             INSERT INTO user_xray_traffic (username, bytes_down, bytes_up, last_seen, is_online, sessions_count)
                             VALUES (?, ?, ?, ?, ?, ?)
@@ -761,13 +908,23 @@ def xray_stats_collector_loop():
                                 is_online = excluded.is_online,
                                 sessions_count = excluded.sessions_count;
                         """, (
-                            uname,
-                            d["down"],
-                            d["up"],
-                            now_ts if (is_onl or d["down"] > 0 or d["up"] > 0) else 0,
-                            is_onl,
-                            1 if is_onl else 0
+                            uname, d["down"], d["up"], last_seen, is_onl, 1 if is_onl else 0
                         ))
+
+                        active_seconds = active_sample_seconds if is_onl else 0
+                        if d["down"] > 0 or d["up"] > 0 or active_seconds > 0:
+                            conn.execute("""
+                                INSERT INTO user_traffic_daily (
+                                    day_ts, username, bytes_down, bytes_up, active_seconds, last_seen
+                                ) VALUES (?, ?, ?, ?, ?, ?)
+                                ON CONFLICT(day_ts, username) DO UPDATE SET
+                                    bytes_down = user_traffic_daily.bytes_down + excluded.bytes_down,
+                                    bytes_up = user_traffic_daily.bytes_up + excluded.bytes_up,
+                                    active_seconds = user_traffic_daily.active_seconds + excluded.active_seconds,
+                                    last_seen = MAX(user_traffic_daily.last_seen, excluded.last_seen)
+                            """, (
+                                day_ts, uname, d["down"], d["up"], active_seconds, last_seen
+                            ))
 
                     all_users = get_users_list()
                     for u in all_users:
