@@ -1544,7 +1544,7 @@ def parse_all_users_stats():
     except Exception:
         return _log_cache.get("stats", {})
 
-def parse_user_stats(username: str) -> dict:
+def parse_user_stats(username: str, include_sensitive: bool = False) -> dict:
     all_stats = parse_all_users_stats()
     raw = all_stats.get(username, {
         "sub_downloads": 0,
@@ -1554,10 +1554,21 @@ def parse_user_stats(username: str) -> dict:
         "last_seen": None
     })
 
-    pin = get_user_pin(username)
+    stored_pin = load_passwords().get(username)
+    stored_pin_text = str(stored_pin).strip() if stored_pin is not None else ""
+    pin_recoverable = bool(stored_pin_text and not stored_pin_text.startswith("pbkdf2:sha256:"))
+    if include_sensitive:
+        pin = get_user_pin(username)
+        if not stored_pin_text:
+            pin_recoverable = True
+    else:
+        pin = "••••"
+
     user_uuid = get_user_uuid(username)
     sub_filename = f"{username}_{user_uuid}.json" if user_uuid else f"{username}.json"
     sub_path = f"/sub/{sub_filename}"
+    subscription_url = f"https://{DOMAIN}{sub_path}" if include_sensitive else ""
+    happ_add_url = f"happ://add/{subscription_url}" if subscription_url else ""
 
     sorted_ips = sorted(raw["ips"].items(), key=lambda x: x[1], reverse=True)
     top_ips = [{"ip": ip, "count": cnt} for ip, cnt in sorted_ips[:10]]
@@ -1575,6 +1586,7 @@ def parse_user_stats(username: str) -> dict:
     return {
         "username": username,
         "pin": pin,
+        "pin_recoverable": pin_recoverable,
         "page_views": raw["page_views"],
         "sub_downloads": raw["sub_downloads"],
         "unique_ips_count": unique_ips_count,
@@ -1582,14 +1594,15 @@ def parse_user_stats(username: str) -> dict:
         "last_seen": raw["last_seen"] or "Нет активности",
         "user_agents": top_uas,
         "leak_warning": leak_warning,
-        "happ_url": f"https://{DOMAIN}{sub_path}",
-        "happ_add_url": f"happ://add/https://{DOMAIN}{sub_path}",
+        "subscription_url": subscription_url,
+        "happ_url": subscription_url,
+        "happ_add_url": happ_add_url,
         "landing_url": f"https://{DOMAIN}/nect/{username}",
-        "landing_url_with_pin": f"https://{DOMAIN}/nect/{username}?pin={pin}",
+        "landing_url_with_pin": f"https://{DOMAIN}/nect/{username}?pin={urllib.parse.quote(pin)}" if include_sensitive and pin != "••••" else "",
         "xray": xtraffic,
     }
 
-def add_new_user(username: str, pin: str = None) -> bool:
+def add_new_user(username: str, pin: str = None) -> str:
     username = username.strip()
     if not re.match(r"^[A-Za-z0-9_-]{2,32}$", username):
         raise ValueError("Имя пользователя должно содержать 2-32 символов (буквы, цифры, дефис, подчеркивание)")
@@ -1601,15 +1614,15 @@ def add_new_user(username: str, pin: str = None) -> bool:
     with open(USERS_FILE, "a", encoding="utf-8") as f:
         f.write(f"{username}\n")
 
+    issued_pin = str(pin).strip() if pin else get_user_pin(username)
     if pin:
-        set_user_pin(username, pin)
-    else:
-        get_user_pin(username)
+        set_user_pin(username, issued_pin)
 
     script_path = "/root/autoXRAY_davida_custom.sh"
     if os.path.exists(script_path):
         subprocess.run(["bash", script_path, "sync", DOMAIN], check=False)
-    return True
+    # Return only to the authenticated create-user request; only the PBKDF2 hash is persisted.
+    return issued_pin
 
 def delete_user(username: str) -> bool:
     username = username.strip()
@@ -1650,6 +1663,7 @@ class DavidaHandler(BaseHTTPRequestHandler):
         content = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(content)))
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Davida-Secret")
@@ -1809,7 +1823,7 @@ class DavidaHandler(BaseHTTPRequestHandler):
         if path.startswith("/api/users/"):
             username = path[len("/api/users/"):].strip()
             if username in get_users_list():
-                self.send_json(parse_user_stats(username))
+                self.send_json(parse_user_stats(username, include_sensitive=True))
             else:
                 self.send_error_json("User not found", status=404)
             return
@@ -1943,9 +1957,9 @@ class DavidaHandler(BaseHTTPRequestHandler):
             username = payload.get("username", "")
             pin = payload.get("pin", None)
             try:
-                add_new_user(username, pin=pin)
+                initial_pin = add_new_user(username, pin=pin)
                 stats = parse_user_stats(username)
-                self.send_json({"success": True, "user": stats, "message": f"Пользователь {username} создан"})
+                self.send_json({"success": True, "user": stats, "initial_pin": initial_pin, "message": f"Пользователь {username} создан"}, headers={"Cache-Control": "no-store"})
             except ValueError as e:
                 self.send_error_json(str(e), status=400)
             return
@@ -1955,7 +1969,7 @@ class DavidaHandler(BaseHTTPRequestHandler):
             pin = payload.get("pin", "").strip()
             try:
                 set_user_pin(username, pin)
-                self.send_json({"success": True, "pin": pin, "message": f"PIN для {username} обновлен"})
+                self.send_json({"success": True, "pin": pin, "message": f"PIN для {username} обновлен"}, headers={"Cache-Control": "no-store"})
             except Exception as e:
                 self.send_error_json(str(e), status=400)
             return

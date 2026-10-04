@@ -989,17 +989,33 @@
       <div id="details-traffic-history-note" class="traffic-history-note">История собирается с момента включения новой статистики.</div>
       <div id="details-traffic-history" class="traffic-history" aria-label="График суточного трафика"></div>
 
-      <div class="detail-section-title">Чистая ссылка (с запросом PIN):</div>
+      <div class="detail-section-title">Пароль / PIN для личной страницы</div>
+      <div class="copy-field">
+        <input type="text" id="details-pin-code" class="form-input mono" readonly placeholder="Хранится в виде хэша">
+        <button id="btn-copy-user-pin" class="btn btn-secondary btn-sm" type="button" onclick="copyInput('details-pin-code')">Копировать</button>
+      </div>
+      <p id="details-pin-note" class="traffic-history-note">Существующий PIN нельзя восстановить из хэша. При сбросе новое значение покажется здесь до перезагрузки панели.</p>
+      <button id="btn-reset-user-pin" class="btn btn-secondary btn-sm" type="button">Задать новый PIN / пароль</button>
+
+      <div class="detail-section-title">Секретная ссылка подписки (уникальная для пользователя)</div>
+      <div class="copy-field">
+        <input type="text" id="details-subscription-url" class="form-input mono" readonly>
+        <button class="btn btn-secondary btn-sm" type="button" onclick="copyInput('details-subscription-url')">Копировать</button>
+      </div>
+      <p class="traffic-history-note">Ссылка содержит секретный UUID. Передавайте её только самому пользователю.</p>
+
+      <div class="detail-section-title">Личная страница (вход по PIN)</div>
       <div class="copy-field">
         <input type="text" id="details-clean-url" class="form-input mono" readonly>
-        <button class="btn btn-secondary btn-sm" onclick="copyInput('details-clean-url')">Копировать</button>
+        <button class="btn btn-secondary btn-sm" type="button" onclick="copyInput('details-clean-url')">Копировать</button>
       </div>
 
-      <div class="detail-section-title">Ссылка с PIN (автовход без ввода пароля):</div>
+      <div class="detail-section-title">Magic link (автовход по PIN, если PIN известен)</div>
       <div class="copy-field">
-        <input type="text" id="details-pin-url" class="form-input mono" readonly>
-        <button class="btn btn-primary btn-sm" onclick="copyInput('details-pin-url')">Копировать</button>
+        <input type="text" id="details-pin-url" class="form-input mono" readonly placeholder="Сбросьте PIN, чтобы создать magic link">
+        <button id="btn-copy-pin-link" class="btn btn-primary btn-sm" type="button" onclick="copyInput('details-pin-url')">Копировать</button>
       </div>
+      <p id="details-pin-link-note" class="traffic-history-note">Magic link не восстанавливается после сохранения PIN в виде хэша.</p>
 
       <div class="detail-section-title">Ссылка на добавление в HAPP в 1 клик:</div>
       <div class="copy-field">
@@ -1071,6 +1087,7 @@
     // State
     let authToken = localStorage.getItem('davida_token');
     let usersData = [];
+    const oneTimePins = new Map();
     let userPeriodDays = 7;
     let currentHistoryHours = 24;
     let rawHistoryData = [];
@@ -1136,6 +1153,7 @@
     }
 
     function showAuthView() {
+      oneTimePins.clear();
       if (dashboardTimer) clearInterval(dashboardTimer);
       if (historyTimer) clearInterval(historyTimer);
       dashboardTimer = historyTimer = null;
@@ -1614,7 +1632,7 @@
           <td><div class="user-name-cell"><div class="user-avatar">${escapeHtml(u.username.substring(0, 2).toUpperCase())}</div><div><div>${username}</div><div class="user-subpath mono">/nect/${username}</div></div></div></td>
           <td><span class="status-badge ${xr.is_online ? 'status-online' : 'status-offline'}"><span class="dot"></span>${xr.is_online ? 'Онлайн' : 'Офлайн'}</span><div class="user-period-meta">${escapeHtml(formatTimeAgo(period.last_seen))}</div></td>
           <td><div><span class="mono user-period-value">${escapeHtml(period.total_formatted || '0 B')}</span><div class="user-period-meta mono">↓ ${escapeHtml(period.down_formatted || '0 B')} · ↑ ${escapeHtml(period.up_formatted || '0 B')}</div><div class="user-period-meta">Активно ~${escapeHtml(formatDuration(period.active_seconds || 0))} · всего ${escapeHtml(xr.total_formatted || '0 B')}</div></div></td>
-          <td><div class="pin-badge"><span id="pin-val-${username}" class="mono">••••</span><button type="button" data-action="pin-toggle" data-user="${username}" title="Показать/скрыть">👁</button><button type="button" data-action="pin-edit" data-user="${username}" title="Изменить пароль">✏️</button></div></td>
+          <td><div class="pin-badge"><span class="mono" title="Откройте карточку пользователя для PIN">••••</span><button type="button" data-action="pin-edit" data-user="${username}" title="Задать новый PIN">✏️</button></div><div class="user-period-meta">${u.pin_recoverable ? 'Legacy PIN' : 'PBKDF2-хэш'}</div></td>
           <td><span class="mono">${Number(u.sub_downloads || 0)}</span></td>
           <td><span class="mono">${Number(u.unique_ips_count || 0)}</span>${warning ? `<span class="leak-warning-badge" title="${warning}">⚠ Multi-IP</span>` : ''}</td>
           <td style="text-align:right"><div class="actions-cell" style="justify-content:flex-end"><button type="button" class="btn btn-secondary btn-sm" data-action="details" data-user="${username}">Мониторинг</button><a href="${landingUrl}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm" title="Открыть страницу">↗</a><button type="button" class="btn btn-danger-soft btn-sm" data-action="delete" data-user="${username}" title="Удалить">✕</button></div></td>
@@ -1628,21 +1646,15 @@
       const username = button.dataset.user;
       const user = usersData.find(item => item.username === username);
       if (!user) return;
-      if (button.dataset.action === 'pin-toggle') togglePinVisibility(username, user.pin);
-      else if (button.dataset.action === 'pin-edit') openEditPin(username, user.pin);
+      if (button.dataset.action === 'pin-edit') openEditPin(username, user.pin);
       else if (button.dataset.action === 'details') openUserDetails(username);
       else if (button.dataset.action === 'delete') deleteUserPrompt(username);
     });
 
-    function togglePinVisibility(username, pin) {
-      const el = document.getElementById(`pin-val-${username}`);
-      if (el) el.textContent = el.textContent === '••••' ? String(pin || '••••') : '••••';
-    }
-
     function openEditPin(username, currentPin) {
       document.getElementById('edit-pin-username').value = username;
-      document.getElementById('edit-pin-input').value = currentPin;
-      document.getElementById('edit-pin-desc').textContent = `Пользователь: ${username}`;
+      document.getElementById('edit-pin-input').value = '';
+      document.getElementById('edit-pin-desc').textContent = `Задайте новое значение для ${username}. Старый PIN в виде хэша восстановить нельзя.`;
       document.getElementById('edit-pin-modal').classList.add('active');
     }
 
@@ -1651,13 +1663,15 @@
       const username = document.getElementById('edit-pin-username').value;
       const pin = document.getElementById('edit-pin-input').value.trim();
       try {
-        await api('/api/users/pin', {
+        const result = await api('/api/users/pin', {
           method: 'POST',
           body: JSON.stringify({ username, pin })
         });
+        oneTimePins.set(username, result.pin || pin);
         closeModals();
-        showToast(`Пароль для ${username} обновлен`);
-        loadDashboard();
+        await loadDashboard();
+        openUserDetails(username);
+        showToast('Новый PIN показан в карточке пользователя; скопируйте и передайте его владельцу.');
       } catch (err) {}
     });
 
@@ -1702,14 +1716,40 @@
       }
     }
 
-    function openUserDetails(username) {
-      const u = usersData.find(x => x.username === username);
-      if (!u) return;
+    async function openUserDetails(username) {
+      const summaryUser = usersData.find(x => x.username === username);
+      if (!summaryUser) return;
+      activeDetailUser = username;
+      let u = {...summaryUser};
+      try {
+        const detail = await api(`/api/users/${encodeURIComponent(username)}`);
+        if (activeDetailUser !== username) return;
+        u = {...u, ...detail};
+      } catch (error) {
+        return;
+      }
 
       document.getElementById('details-modal-title').textContent = `Доступ: ${u.username}`;
-      document.getElementById('details-clean-url').value = u.landing_url;
-      document.getElementById('details-pin-url').value = u.landing_url_with_pin;
-      document.getElementById('details-happ-url').value = u.happ_add_url;
+      document.getElementById('details-clean-url').value = u.landing_url || '';
+      document.getElementById('details-happ-url').value = u.happ_add_url || '';
+
+      const pinWasIssuedThisSession = oneTimePins.has(username);
+      const legacyPinAvailable = Boolean(u.pin_recoverable && u.pin && u.pin !== '••••');
+      const oneTimePin = oneTimePins.get(username) || (legacyPinAvailable ? u.pin : '');
+      const pinLink = oneTimePin ? `${u.landing_url}?pin=${encodeURIComponent(oneTimePin)}` : (u.landing_url_with_pin || '');
+      document.getElementById('details-pin-code').value = oneTimePin;
+      document.getElementById('btn-copy-user-pin').disabled = !oneTimePin;
+      document.getElementById('details-pin-note').textContent = pinWasIssuedThisSession
+        ? 'Новое значение показано один раз и есть только в памяти этой сессии. Скопируйте и передайте пользователю.'
+        : legacyPinAvailable
+          ? 'Legacy PIN хранится открытым текстом. Передайте его пользователю и затем сбросьте на новое значение для перехода к PBKDF2.'
+          : 'PIN хранится только как PBKDF2-хэш и восстановить его нельзя. Задайте новый PIN, чтобы показать его один раз.';
+      document.getElementById('details-subscription-url').value = u.subscription_url || u.happ_url || '';
+      document.getElementById('details-pin-url').value = pinLink;
+      document.getElementById('btn-copy-pin-link').disabled = !pinLink;
+      document.getElementById('details-pin-link-note').textContent = pinLink
+        ? 'Magic link содержит PIN. Передавайте его только самому пользователю.'
+        : 'Для magic link сначала задайте новый PIN: сохранённый хэш нельзя превратить обратно в пароль.';
 
       const xr = u.xray || { is_online: false, total_formatted: '0 B', down_formatted: '0 B', up_formatted: '0 B', last_seen_vpn: null };
       const statusHtml = xr.is_online 
@@ -1746,15 +1786,16 @@
         uasWrap.innerHTML = '<span class="ip-tag">Нет данных</span>';
       }
 
-      activeDetailUser = username;
       loadUserTrafficHistory(username);
-      document.getElementById('details-share-text').value = 
+      const shareLink = pinLink || u.landing_url || '';
+      const sharePin = oneTimePin || 'PIN нельзя восстановить из хэша — задайте новый в панели перед отправкой.';
+      document.getElementById('details-share-text').value =
 `Привет! Твоя персональная ссылка для подключения к сети:
-${u.landing_url_with_pin}
+${shareLink}
 
-Твой пароль для входа: ${u.pin}
+Твой пароль для входа: ${sharePin}
 
-Если у тебя уже установлено приложение HAPP, можешь нажать ссылку выше и выбрать «Добавить в 1 клик».`;
+Если у тебя уже установлено приложение HAPP, открой ссылку и выбери «Добавить в 1 клик».`;
 
       document.getElementById('user-details-modal').classList.add('active');
     }
@@ -1799,10 +1840,11 @@ ${u.landing_url_with_pin}
           method: 'POST',
           body: JSON.stringify({ username, pin })
         });
+        if (res.initial_pin) oneTimePins.set(username, res.initial_pin);
         closeModals();
-        showToast(`Пользователь ${username} создан`);
         await loadDashboard();
         openUserDetails(username);
+        showToast(res.initial_pin ? 'Пользователь создан. Скопируйте выданный PIN из карточки.' : `Пользователь ${username} создан`);
       } catch (err) {}
     });
 
@@ -1822,6 +1864,11 @@ ${u.landing_url_with_pin}
       showAuthView();
     });
 
+    document.getElementById('btn-reset-user-pin').addEventListener('click', () => {
+      if (!activeDetailUser) return;
+      const user = usersData.find(item => item.username === activeDetailUser);
+      if (user) openEditPin(activeDetailUser, user.pin);
+    });
     document.getElementById('user-search').addEventListener('input', applyUserFilters);
     document.getElementById('user-status-filter').addEventListener('change', applyUserFilters);
     document.getElementById('user-sort').addEventListener('change', applyUserFilters);
