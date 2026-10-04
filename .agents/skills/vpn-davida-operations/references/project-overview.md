@@ -41,20 +41,15 @@ is not durable and will be overwritten by `sync` or `webfix`.
 
 ## Users and naming
 
-The live snapshot on 2026-09-15 contained 27 technical IDs and 27 generated
-subscriptions. The observed IDs were:
-
-`david`, `arkadyevna`, `GalinaArkadyevna`, `TigranAyrapetian`,
-`TatianaHalimon`, `MadMommy`, `Feainne`, `Kira`, `Nekumir`, `Artemis`,
-`Ekaterina`, `Agata`, `OlgaHalimon`, `IlyaIvanov`, `ElenaTomilchik`,
-`Gulnara`, `Aynur`, `Emin`, `EvaFrey`, `Farhadazid`, `Ana-Anastasia`,
-`AlexKuro`, `ornamau`, `Tigran`, `Nadzo`, `HugoEkitike`, `vika`.
+The live snapshot contained a set of technical IDs and matching generated
+subscriptions. The roster is deliberately not reproduced here; query the live
+registry privately when a count or an identifier is needed.
 
 This is a dated snapshot, not permission to expose a registry. Before adding
 or renaming anyone, query the live registry privately. Technical IDs must
 match `^[A-Za-z0-9_-]{2,32}$`; decorative names belong in the generator's
-display/title map. Known examples include Nadzo's heart in the page title and
-vika's decorative display name. Do not encode decoration into transport IDs.
+display/title map. Known examples include ExampleUser's heart in the page title and
+ExampleUser2's decorative display name. Do not encode decoration into transport IDs.
 
 ## Transport and client policy
 

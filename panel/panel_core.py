@@ -132,10 +132,10 @@ def rotate_cluster_master_password(new_password: str) -> dict:
             continue
         try:
             cmd = [
-                "ssh", "-i", str(CLUSTER_SSH_KEY), "-p", "22",
+                "ssh", "-i", str(CLUSTER_SSH_KEY), "-p", SSH_PORT,
                 "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=4",
-                f"vpnadmin@{ip}",
-                f"cat > {ETC_DIR}/master_secret && chmod 600 {ETC_DIR}/master_secret && awk \'{{print \"vpnadmin:\" $0}}\' {ETC_DIR}/master_secret | sudo -n chpasswd"
+                "--", f"{SSH_USER}@{ip}",
+                f"cat > {ETC_DIR}/master_secret && chmod 600 {ETC_DIR}/master_secret && awk \'{{print \"{SSH_USER}:\" $0}}\' {ETC_DIR}/master_secret | sudo -n chpasswd"
             ]
             res = subprocess.run(cmd, input=new_password, capture_output=True, text=True, timeout=8)
             if res.returncode == 0:

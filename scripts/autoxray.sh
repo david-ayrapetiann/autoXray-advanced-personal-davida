@@ -13,6 +13,7 @@ NC='\033[0m'
 
 PROJECT_NAME="vpn-cluster.skam"
 APP_DIR="/etc/vpn-cluster"
+ETC_DIR="$APP_DIR"
 BACKUP_DIR="/root/vpn-cluster-backups"
 XRAY_DIR="/usr/local/etc/xray"
 CERT_DIR="/var/lib/xray/cert"
@@ -64,6 +65,7 @@ fi
 
 WEB_PATH="/var/www/$DOMAIN"
 CORE_PATH="$WEB_PATH/$CORE_DIR_NAME"
+export DOMAIN WEB_PATH CORE_PATH
 USERS_FILE="$APP_DIR/users.txt"
 ENV_FILE="$APP_DIR/current.env"
 
@@ -2232,10 +2234,10 @@ const CONFIG = {
   maxUrl: document.getElementById("personalPage").dataset.maxUrl,
 };
 
-// Populate page: Heart ONLY for Nadzo, clean uppercase name for everyone else
+// Populate page: Heart ONLY for ExampleUser, clean uppercase name for everyone else
 const rawName = (CONFIG.userName || "").trim();
-const isNadzo = rawName.toLowerCase() === "nadzo";
-const displayName = isNadzo ? (rawName.toUpperCase() + " ❤️") : rawName.toUpperCase();
+const isExampleUser = rawName.toLowerCase() === "exampleuser";
+const displayName = isExampleUser ? (rawName.toUpperCase() + " ❤️") : rawName.toUpperCase();
 const userNameEl = document.getElementById("userName");
 userNameEl.textContent = displayName;
 document.title = displayName + " // Персональный доступ";
@@ -3796,8 +3798,8 @@ PY
 
 NESTED_GUIDE_DISABLED
   local display_name="$username"
-  [[ "$username" == "Nadzo" ]] && display_name="$username ❤️"
-  [[ "$username" == "vika" ]] && display_name='⁎❁⁕❁※~(´◡`)~※❁⁕❁⁎'
+  [[ "$username" == "ExampleUser" ]] && display_name="$username ❤️"
+  [[ "$username" == "ExampleUser2" ]] && display_name='⁎❁⁕❁※~(´◡`)~※❁⁕❁⁎'
   PAGE_TITLE_SAFE="$display_name · $SUBSCRIPTION_NAME"
   export PAGE_USERNAME="$display_name"
   export PAGE_TITLE_SAFE
@@ -3879,7 +3881,7 @@ make_user_subscription() {
   local username="$1"
   local sub_dir="$WEB_PATH/sub"
   local reminder_remark user_uuid
-  reminder_remark="Обнови подписку – нажать на 🔄 сверху"
+  reminder_remark="ВНИМАНИЕ: обновляю ключи — напишите администратору!"
   mkdir -p "$sub_dir"
 
   # Lookup personal UUID from users.json
@@ -3914,7 +3916,8 @@ if isinstance(data, list) and len(data) > 0:
 
     reminder_prof = json.loads(json.dumps(data[0]))
     reminder_prof['remarks'] = reminder
-    data.append(reminder_prof)
+    # Prepend so the notice appears above the first real node.
+    data.insert(0, reminder_prof)
 
 output_data = json.dumps(data, ensure_ascii=False, indent=2) + '\n'
 if '$user_uuid':
