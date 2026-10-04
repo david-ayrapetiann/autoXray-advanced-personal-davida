@@ -1565,9 +1565,8 @@ def parse_user_stats(username: str, include_sensitive: bool = False) -> dict:
         pin = "••••"
 
     user_uuid = get_user_uuid(username)
-    sub_filename = f"{username}_{user_uuid}.json" if user_uuid else f"{username}.json"
-    sub_path = f"/sub/{sub_filename}"
-    subscription_url = f"https://{DOMAIN}{sub_path}" if include_sensitive else ""
+    sub_path = f"/sub/{username}_{user_uuid}.json" if user_uuid else ""
+    subscription_url = f"https://{DOMAIN}{sub_path}" if include_sensitive and user_uuid else ""
     happ_add_url = f"happ://add/{subscription_url}" if subscription_url else ""
 
     sorted_ips = sorted(raw["ips"].items(), key=lambda x: x[1], reverse=True)
@@ -1880,7 +1879,10 @@ class DavidaHandler(BaseHTTPRequestHandler):
                 if not host or "skam" not in host:
                     host = DOMAIN
                 user_uuid = get_user_uuid(username)
-                sub_filename = f"{username}_{user_uuid}.json" if user_uuid else f"{username}.json"
+                if not user_uuid:
+                    self.send_error_json("Защищённая подписка пользователя ещё не создана", status=503)
+                    return
+                sub_filename = f"{username}_{user_uuid}.json"
                 sub_url = f"https://{host}/sub/{sub_filename}"
                 happ_url = f"happ://add/{sub_url}"
                 self.send_json({

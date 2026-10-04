@@ -235,11 +235,11 @@ write_landing_page() {
   if [[ -f "$ETC_DIR/users.json" ]]; then
     user_uuid=$(jq -r --arg u "$username" '.[$u] // empty' "$ETC_DIR/users.json")
   fi
-  local sub_filename="$username.json"
-  if [[ -n "$user_uuid" ]]; then
-    sub_filename="${username}_${user_uuid}.json"
+  if [[ -z "$user_uuid" ]]; then
+    echo -e "${RED}❌ Нельзя публиковать legacy-ссылку: у пользователя $username нет capability UUID.${NC}"
+    return 1
   fi
-  
+  local sub_filename="${username}_${user_uuid}.json"
   local sub_url="https://$DOMAIN/sub/$sub_filename"
   local happ_add_url="happ://add/$sub_url"
   local page_file="$nnect_dir/$username.html"
