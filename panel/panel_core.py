@@ -662,7 +662,142 @@ def get_node_status() -> list:
             })
     return results
 
+def get_node_rollup_history(hours: int = 720, max_points: int = 80) -> dict:
+    """Serve long ranges from hourly aggregates instead of scanning raw samples."""
+    hours = max(169, min(int(hours), 2160))
+    max_points = max(20, min(int(max_points), 500))
+    since = int(time.time()) - (hours * 3600)
+    nodes = get_nodes()
+    node_ids = [n["id"] for n in nodes]
+    if not node_ids:
+        return {"history": [], "hours": hours, "summary": {}}
+
+    placeholders = ",".join("?" for _ in node_ids)
+    try:
+        with sqlite3.connect(DB_PATH, timeout=5) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(f"""
+                SELECT hour_ts, node_id, sample_count, online_count, uptime_pct,
+                       avg_ping_ms, avg_client_rtt_p50, avg_client_rtt_p95,
+                       avg_rtt_var, avg_retrans_rate_pct, avg_anycast_ms,
+                       avg_quality_score, avg_active_sessions
+                FROM node_stats_hourly
+                WHERE hour_ts >= ? AND node_id IN ({placeholders})
+                ORDER BY hour_ts ASC
+            """, (since, *node_ids)).fetchall()
+
+        if not rows:
+            return {"history": [], "hours": hours, "summary": {}}
+
+        bucket_hours = max(1, math.ceil(hours / max_points))
+        bucket_size = bucket_hours * 3600
+        bucket_values = {}
+        totals = {nid: {
+            "samples": 0, "online": 0, "last_sessions": 0,
+            "last_hour": 0,
+            "rtt": [0.0, 0], "retrans": [0.0, 0],
+            "score": [0.0, 0], "anycast": [0.0, 0], "jitter": [0.0, 0]
+        } for nid in node_ids}
+
+        def add_bucket(bucket, metric, node_id, value, weight):
+            if value is None or weight <= 0:
+                return
+            pair = bucket.setdefault(metric, {}).setdefault(node_id, [0.0, 0])
+            pair[0] += float(value) * weight
+            pair[1] += weight
+
+        for row in rows:
+            nid = row["node_id"]
+            if nid not in totals:
+                continue
+            weight = max(0, int(row["sample_count"] or 0))
+            if not weight:
+                continue
+            online = max(0, int(row["online_count"] or 0))
+            stat = totals[nid]
+            stat["samples"] += weight
+            stat["online"] += online
+            stat["last_sessions"] = row["avg_active_sessions"] or 0
+            stat["last_hour"] = row["hour_ts"]
+
+            values = {
+                "rtt": row["avg_client_rtt_p50"],
+                "retrans": row["avg_retrans_rate_pct"],
+                "score": row["avg_quality_score"],
+                "anycast": row["avg_anycast_ms"],
+                "jitter": row["avg_rtt_var"]
+            }
+            for key, value in values.items():
+                if value is not None:
+                    stat[key][0] += float(value) * weight
+                    stat[key][1] += weight
+
+            bucket_ts = (int(row["hour_ts"]) // bucket_size) * bucket_size
+            bucket = bucket_values.setdefault(bucket_ts, {})
+            ping_value = row["avg_client_rtt_p50"]
+            if ping_value is None:
+                ping_value = row["avg_ping_ms"]
+            add_bucket(bucket, "pings", nid, ping_value if ping_value is not None else row["avg_anycast_ms"], weight)
+            add_bucket(bucket, "rtt", nid, row["avg_client_rtt_p50"], weight)
+            add_bucket(bucket, "retrans", nid, row["avg_retrans_rate_pct"], weight)
+            add_bucket(bucket, "score", nid, row["avg_quality_score"], weight)
+            add_bucket(bucket, "anycast", nid, row["avg_anycast_ms"], weight)
+            add_bucket(bucket, "sessions", nid, row["avg_active_sessions"], weight)
+
+        chart_data = []
+        for bucket_ts in sorted(bucket_values):
+            bucket = bucket_values[bucket_ts]
+            entry = {"timestamp": bucket_ts, "pings": {}, "rtt": {}, "retrans": {}, "score": {}, "anycast": {}, "sessions": {}}
+            for nid in node_ids:
+                for metric in ("pings", "rtt", "retrans", "score", "anycast", "sessions"):
+                    pair = bucket.get(metric, {}).get(nid)
+                    value = pair[0] / pair[1] if pair and pair[1] else None
+                    if metric in ("pings", "rtt", "anycast") and value is not None:
+                        value = round(value, 2 if metric == "anycast" else 1)
+                    elif metric == "retrans" and value is not None:
+                        value = round(value, 2)
+                    elif metric in ("score", "sessions") and value is not None:
+                        value = int(round(value))
+                    entry[metric][nid] = value
+            chart_data.append(entry)
+
+        summary = {}
+        for node in nodes:
+            nid = node["id"]
+            stat = totals[nid]
+            samples = stat["samples"]
+            online = stat["online"]
+            def average(key):
+                total, weight = stat[key]
+                return total / weight if weight else None
+            avg_rtt = average("rtt")
+            avg_retrans = average("retrans")
+            avg_score = average("score")
+            avg_anycast = average("anycast")
+            avg_jitter = average("jitter")
+            score = int(round(avg_score)) if avg_score is not None else 100
+            label = "Отличный" if score >= 90 else "Стабильный" if score >= 75 else "Шумный аплинк" if score >= 50 else "Деградация канала"
+            summary[nid] = {
+                "name": node["name"], "dc": node["dc"],
+                "avg_ms": round(avg_rtt, 1) if avg_rtt is not None else None,
+                "client_rtt_p50": round(avg_rtt, 1) if avg_rtt is not None else None,
+                "retrans_rate_pct": round(avg_retrans, 2) if avg_retrans is not None else 0.0,
+                "quality_score": score, "status_label": label,
+                "anycast_ms": round(avg_anycast, 2) if avg_anycast is not None else None,
+                "jitter_ms": round(avg_jitter, 1) if avg_jitter is not None else 0.0,
+                "packet_loss_pct": round((samples - online) * 100.0 / samples, 1) if samples else 0.0,
+                "active_sessions": int(round(stat["last_sessions"])),
+                "total_checks": samples
+            }
+        return {"history": chart_data, "hours": hours, "summary": summary, "source": "hourly"}
+    except Exception as e:
+        return {"history": [], "hours": hours, "summary": {}, "error": str(e)}
+
 def get_pings_history(hours: int = 24, max_points: int = 80) -> dict:
+    hours = max(1, min(int(hours), 2160))
+    max_points = max(20, min(int(max_points), 500))
+    if hours > 168:
+        return get_node_rollup_history(hours, max_points)
     since = int(time.time()) - (hours * 3600)
     try:
         with sqlite3.connect(DB_PATH, timeout=5) as conn:
@@ -1000,6 +1135,134 @@ def get_user_xray_traffic(username: str) -> dict:
         "last_seen_vpn": None
     }
 
+def _bounded_history_days(value, default=7, maximum=365):
+    try:
+        days = int(value)
+    except (TypeError, ValueError):
+        days = default
+    return max(1, min(days, maximum))
+
+
+def get_users_traffic_period(days=7) -> dict:
+    """Return bounded per-user Xray traffic for recent UTC day buckets."""
+    days = _bounded_history_days(days, default=7, maximum=365)
+    now_ts = int(time.time())
+    today_ts = (now_ts // 86400) * 86400
+    start_day = today_ts - ((days - 1) * 86400)
+    try:
+        with sqlite3.connect(DB_PATH, timeout=5) as conn:
+            conn.row_factory = sqlite3.Row
+            daily_rows = conn.execute("""
+                SELECT username, SUM(bytes_down) AS bytes_down,
+                       SUM(bytes_up) AS bytes_up, SUM(active_seconds) AS active_seconds,
+                       MAX(last_seen) AS period_last_seen
+                FROM user_traffic_daily
+                WHERE day_ts >= ?
+                GROUP BY username
+            """, (start_day,)).fetchall()
+            current_rows = conn.execute("""
+                SELECT username, bytes_down, bytes_up, last_seen, is_online
+                FROM user_xray_traffic
+            """).fetchall()
+            first_available_day = conn.execute(
+                "SELECT MIN(day_ts) FROM user_traffic_daily"
+            ).fetchone()[0]
+
+        daily = {r["username"]: r for r in daily_rows}
+        current = {r["username"]: r for r in current_rows}
+        users = []
+        for username in get_users_list():
+            d = daily.get(username)
+            c = current.get(username)
+            down = int(d["bytes_down"] or 0) if d else 0
+            up = int(d["bytes_up"] or 0) if d else 0
+            active_seconds = int(d["active_seconds"] or 0) if d else 0
+            current_down = int(c["bytes_down"] or 0) if c else 0
+            current_up = int(c["bytes_up"] or 0) if c else 0
+            last_seen = int(c["last_seen"] or 0) if c else 0
+            if not last_seen and d:
+                last_seen = int(d["period_last_seen"] or 0)
+            users.append({
+                "username": username,
+                "bytes_down": down,
+                "bytes_up": up,
+                "bytes_total": down + up,
+                "down_formatted": format_bytes(down),
+                "up_formatted": format_bytes(up),
+                "total_formatted": format_bytes(down + up),
+                "active_seconds": active_seconds,
+                "active_minutes": round(active_seconds / 60, 1),
+                "current_total_bytes": current_down + current_up,
+                "is_online": bool(c["is_online"]) if c else False,
+                "last_seen": last_seen or None,
+                "last_seen_vpn": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(last_seen)) if last_seen else None
+            })
+
+        users.sort(key=lambda u: (-u["bytes_total"], u["username"].lower()))
+        total_down = sum(u["bytes_down"] for u in users)
+        total_up = sum(u["bytes_up"] for u in users)
+        active_users = sum(1 for u in users if u["bytes_total"] > 0 or u["active_seconds"] > 0)
+        online_users = sum(1 for u in users if u["is_online"])
+        return {
+            "days": days,
+            "start_day": start_day,
+            "history_available_from": int(first_available_day) if first_available_day is not None else None,
+            "generated_at": now_ts,
+            "total_users": len(users),
+            "active_users": active_users,
+            "online_users": online_users,
+            "bytes_down": total_down,
+            "bytes_up": total_up,
+            "bytes_total": total_down + total_up,
+            "down_formatted": format_bytes(total_down),
+            "up_formatted": format_bytes(total_up),
+            "total_formatted": format_bytes(total_down + total_up),
+            "active_seconds": sum(u["active_seconds"] for u in users),
+            "users": users
+        }
+    except Exception as e:
+        return {"days": days, "users": [], "total_users": 0, "error": str(e)}
+
+
+def get_user_traffic_history(username: str, days=30) -> dict:
+    """Return a zero-filled daily series; collection starts at feature rollout."""
+    days = _bounded_history_days(days, default=30, maximum=365)
+    now_ts = int(time.time())
+    today_ts = (now_ts // 86400) * 86400
+    start_day = today_ts - ((days - 1) * 86400)
+    with sqlite3.connect(DB_PATH, timeout=5) as conn:
+        rows = conn.execute("""
+            SELECT day_ts, bytes_down, bytes_up, active_seconds, last_seen
+            FROM user_traffic_daily
+            WHERE username = ? AND day_ts >= ?
+            ORDER BY day_ts
+        """, (username, start_day)).fetchall()
+        first_day = conn.execute(
+            "SELECT MIN(day_ts) FROM user_traffic_daily WHERE username = ?", (username,)
+        ).fetchone()[0]
+    by_day = {int(r[0]): r for r in rows}
+    history = []
+    for offset in range(days):
+        day_ts = start_day + offset * 86400
+        r = by_day.get(day_ts)
+        down = int(r[1] or 0) if r else 0
+        up = int(r[2] or 0) if r else 0
+        history.append({
+            "day_ts": day_ts,
+            "bytes_down": down,
+            "bytes_up": up,
+            "bytes_total": down + up,
+            "active_seconds": int(r[3] or 0) if r else 0,
+            "last_seen": int(r[4] or 0) if r else 0
+        })
+    return {
+        "username": username,
+        "days": days,
+        "history_available_from": int(first_day) if first_day is not None else None,
+        "history": history
+    }
+
+
 # --- USER PASSWORDS / PINs MANAGEMENT ---
 
 _pin_rate_lock = threading.Lock()
@@ -1210,18 +1473,26 @@ import glob
 _log_cache = {
     "mtime": 0,
     "size": 0,
+    "checked_at": 0.0,
     "stats": {}
 }
+_LOG_STATS_CACHE_TTL_SEC = 15
 
 def parse_all_users_stats():
     global _log_cache
+    now = time.monotonic()
+    if now - _log_cache.get("checked_at", 0.0) < _LOG_STATS_CACHE_TTL_SEC:
+        return _log_cache.get("stats", {})
+
     log_files = sorted(glob.glob(f"{LOG_BASENAME}*"))
     if not log_files:
+        _log_cache.update({"checked_at": now, "stats": {}})
         return {}
 
     try:
         active_stat = LOG_FILE.stat() if LOG_FILE.exists() else None
         if active_stat and active_stat.st_mtime == _log_cache.get("mtime") and active_stat.st_size == _log_cache.get("size"):
+            _log_cache["checked_at"] = now
             return _log_cache["stats"]
 
         users = get_users_list()
@@ -1268,6 +1539,7 @@ def parse_all_users_stats():
             _log_cache["mtime"] = active_stat.st_mtime
             _log_cache["size"] = active_stat.st_size
         _log_cache["stats"] = user_stats
+        _log_cache["checked_at"] = time.monotonic()
         return user_stats
     except Exception:
         return _log_cache.get("stats", {})
@@ -1455,6 +1727,24 @@ class DavidaHandler(BaseHTTPRequestHandler):
             self.send_json(get_xray_stats_overview())
             return
 
+        if path == "/api/stats/users":
+            qs = urllib.parse.parse_qs(parsed.query)
+            days = _bounded_history_days(qs.get("days", ["7"])[0], default=7, maximum=365)
+            self.send_json(get_users_traffic_period(days))
+            return
+
+        if path.startswith("/api/stats/users/"):
+            parts = path.strip("/").split("/")
+            if len(parts) == 5 and parts[4] == "history":
+                username = urllib.parse.unquote(parts[3])
+                if username not in get_users_list():
+                    self.send_error_json("User not found", status=404)
+                    return
+                qs = urllib.parse.parse_qs(parsed.query)
+                days = _bounded_history_days(qs.get("days", ["30"])[0], default=30, maximum=365)
+                self.send_json(get_user_traffic_history(username, days))
+                return
+
         if path == "/api/status":
             nodes = get_node_status()
             users = get_users_list()
@@ -1469,7 +1759,11 @@ class DavidaHandler(BaseHTTPRequestHandler):
 
         if path == "/api/nodes/history":
             qs = urllib.parse.parse_qs(parsed.query)
-            hours = int(qs.get("hours", ["24"])[0])
+            try:
+                hours = int(qs.get("hours", ["24"])[0])
+            except (TypeError, ValueError):
+                hours = 24
+            hours = max(1, min(hours, 2160))
             data = get_pings_history(hours=hours)
             self.send_json(data)
             return

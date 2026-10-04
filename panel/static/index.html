@@ -1,0 +1,1986 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Davida Core · Консоль управления</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Ubuntu+Mono:ital,wght@0,400;0,700;1,400;1,700&family=Ubuntu+Sans:ital,wght@0,100..800;1,100..800&family=Ubuntu:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400;1,500;1,700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #07090e;
+      --card: #0d121d;
+      --card-hover: #121826;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-focus: rgba(245, 158, 11, 0.4);
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --amber: #f59e0b;
+      --amber-glow: rgba(245, 158, 11, 0.15);
+      --emerald: #10b981;
+      --emerald-glow: rgba(16, 185, 129, 0.15);
+      --cyan: #06b6d4;
+      --purple: #a855f7;
+      --rose: #f43f5e;
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --ease-spring: cubic-bezier(0.2, 0, 0, 1);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Ubuntu', 'Ubuntu Sans', system-ui, sans-serif;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.5;
+      padding-bottom: 60px;
+    }
+
+    code, .mono { font-family: 'Ubuntu Mono', monospace; }
+
+    .ambient-glow {
+      position: fixed;
+      top: -10vw;
+      right: 15vw;
+      width: 40vw;
+      height: 40vw;
+      background: radial-gradient(circle, rgba(245, 158, 11, 0.04) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 24px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 32px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .brand { display: flex; align-items: center; gap: 14px; }
+    .brand-logo {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    }
+
+    .brand-text h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; color: #fff; }
+    .brand-text span { font-size: 12px; color: var(--text-dim); }
+    .header-actions { display: flex; align-items: center; gap: 12px; }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: transform 120ms var(--ease-spring), background 150ms var(--ease-out), border-color 150ms var(--ease-out), box-shadow 150ms var(--ease-out);
+      text-decoration: none;
+    }
+    .btn:active { transform: scale(0.97); }
+
+    .btn-primary {
+      background: #f59e0b;
+      color: #07090e;
+      box-shadow: 0 2px 10px rgba(245, 158, 11, 0.25);
+    }
+    .btn-primary:hover {
+      background: #fbbf24;
+      box-shadow: 0 4px 16px rgba(245, 158, 11, 0.35);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    .btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 8px; }
+    .btn-danger-soft {
+      background: rgba(244, 63, 94, 0.1);
+      color: #fb7185;
+      border: 1px solid rgba(244, 63, 94, 0.2);
+    }
+    .btn-danger-soft:hover { background: rgba(244, 63, 94, 0.18); }
+
+    /* Section Headers */
+    .section-header-wrap {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Nodes Grid & Rich Matrix */
+    .nodes-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .node-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px 18px;
+      transition: background 150ms var(--ease-out), border-color 150ms var(--ease-out), transform 150ms var(--ease-out);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .node-card:hover {
+      background: var(--card-hover);
+      border-color: rgba(255, 255, 255, 0.14);
+      transform: translateY(-2px);
+    }
+
+    .node-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 0;
+    }
+
+    .node-info-col {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .node-name { font-size: 15px; font-weight: 700; color: #fff; }
+    .node-dc-sub { font-size: 11px; color: var(--text-dim); }
+
+    .score-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 8px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .score-badge .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+    .score-optimal {
+      background: rgba(16, 185, 129, 0.12);
+      color: var(--emerald);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+    }
+    .score-optimal .dot { background: var(--emerald); box-shadow: 0 0 6px var(--emerald); }
+    .score-stable {
+      background: rgba(6, 182, 212, 0.12);
+      color: var(--cyan);
+      border: 1px solid rgba(6, 182, 212, 0.25);
+    }
+    .score-stable .dot { background: var(--cyan); box-shadow: 0 0 6px var(--cyan); }
+    .score-noisy {
+      background: rgba(245, 158, 11, 0.12);
+      color: var(--amber);
+      border: 1px solid rgba(245, 158, 11, 0.25);
+    }
+    .score-noisy .dot { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+    .score-degraded {
+      background: rgba(244, 63, 94, 0.12);
+      color: var(--rose);
+      border: 1px solid rgba(244, 63, 94, 0.25);
+    }
+    .score-degraded .dot { background: var(--rose); box-shadow: 0 0 6px var(--rose); }
+    .score-reserve {
+      background: rgba(148, 163, 184, 0.12);
+      color: var(--text-muted);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+    .score-reserve .dot { background: var(--text-muted); }
+
+    .node-metrics-matrix {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+    .nm-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .nm-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-dim);
+    }
+    .nm-value {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .nm-warn {
+      color: var(--rose) !important;
+    }
+
+    .metric-tabs {
+      display: flex;
+      gap: 4px;
+      background: rgba(255, 255, 255, 0.04);
+      padding: 3px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .metric-tab {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 5px 11px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 120ms var(--ease-out);
+    }
+    .metric-tab:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .metric-tab.active {
+      background: #f59e0b;
+      color: #07090e;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    }
+
+    /* Chart Container & Toolbar */
+    .chart-panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px 24px;
+      margin-bottom: 32px;
+      position: relative;
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .chart-title-wrap h3 {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .chart-title-wrap p {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    /* Range selector buttons */
+    .range-selector {
+      display: inline-flex;
+      background: rgba(255, 255, 255, 0.04);
+      padding: 3px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      gap: 2px;
+    }
+
+    .range-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 5px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 150ms var(--ease-out);
+    }
+    .range-btn.active {
+      background: rgba(245, 158, 11, 0.18);
+      color: var(--amber);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    }
+
+    /* Summary Metric Strip */
+    .metrics-summary-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .metric-strip-card {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      border-radius: 10px;
+      padding: 10px 14px;
+    }
+    .metric-strip-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; font-weight: 700; }
+    .metric-strip-val { font-size: 16px; font-weight: 700; color: #fff; margin-top: 2px; }
+
+    /* Interactive SVG Chart */
+    .chart-svg-wrap {
+      position: relative;
+      width: 100%;
+      height: 220px;
+    }
+
+    #ping-chart-svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+      cursor: crosshair;
+    }
+
+    /* Floating Tooltip */
+    .chart-tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: rgba(13, 18, 29, 0.94);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      backdrop-filter: blur(16px);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: #fff;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.6);
+      display: none;
+      z-index: 10;
+      min-width: 170px;
+      transform: translate(-50%, -120%);
+      transition: transform 80ms ease, opacity 80ms ease;
+    }
+
+    .chart-tooltip-time {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-bottom: 6px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 4px;
+      font-weight: 600;
+    }
+
+    .chart-tooltip-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 3px;
+    }
+
+    /* Chart Legend & Toggles */
+    .chart-legend {
+      display: flex;
+      gap: 16px;
+      margin-top: 14px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-muted);
+      cursor: pointer;
+      user-select: none;
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: background 120ms;
+    }
+    .legend-item:hover { background: rgba(255, 255, 255, 0.05); }
+    .legend-item.dimmed { opacity: 0.35; text-decoration: line-through; }
+    .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+    /* Users Table */
+    .users-panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .users-toolbar {
+      padding: 16px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .users-toolbar-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .users-toolbar .user-filter-select { width: auto; min-width: 118px; padding: 8px 10px; font-size: 12px; }
+    .users-period-summary { margin: 0 20px; padding: 14px 0 10px; }
+    .user-stats-note { margin: 0 20px 12px; color: var(--text-dim); font-size: 11px; }
+    .traffic-history-note { color: var(--text-dim); font-size: 11px; margin: -8px 0 12px; }
+    .traffic-history { height: 112px; display: grid; grid-template-columns: repeat(30, minmax(3px, 1fr)); gap: 3px; align-items: stretch; padding: 8px 0 18px; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
+    .traffic-history-column { min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; }
+    .traffic-history-bar { width: 100%; min-height: 3px; border-radius: 4px 4px 1px 1px; background: linear-gradient(180deg, var(--amber), rgba(245,158,11,.28)); position: relative; }
+    .traffic-history-bar.is-empty { opacity: .18; }
+    .traffic-history-bar:hover { background: linear-gradient(180deg, #fbbf24, rgba(245,158,11,.48)); }
+    .traffic-history-column span { color: var(--text-dim); font-size: 8px; white-space: nowrap; }
+    .traffic-history-empty { grid-column: 1 / -1; align-self: center; color: var(--text-dim); font-size: 12px; text-align: center; }
+
+    .search-wrap {
+      position: relative;
+      flex: 1;
+      max-width: 320px;
+    }
+
+    .search-input {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 12px 8px 36px;
+      color: #fff;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 150ms;
+    }
+    .search-input:focus { border-color: var(--amber); }
+    .search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-dim);
+      font-size: 14px;
+    }
+
+    .users-table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      text-align: left;
+    }
+
+    th {
+      padding: 12px 20px;
+      color: var(--text-dim);
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.05em;
+    }
+
+    td {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-muted);
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255, 255, 255, 0.015); }
+
+    .user-name-cell {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 600;
+      color: #fff;
+      min-width: 170px;
+    }
+    .user-subpath { display: block; margin-top: 2px; font-size: 10px; color: var(--text-dim); font-weight: 400; }
+    .user-period-value { color: #fff; font-size: 13px; font-weight: 700; white-space: nowrap; }
+    .user-period-meta { margin-top: 2px; color: var(--text-dim); font-size: 10px; white-space: nowrap; }
+
+    .user-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(245, 158, 11, 0.05));
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      color: var(--amber);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 12px;
+    }
+
+    .pin-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255, 255, 255, 0.04);
+      padding: 3px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      font-size: 12px;
+    }
+    .pin-badge button {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+    }
+    .pin-badge button:hover { color: #fff; }
+
+    .leak-warning-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 7px;
+      border-radius: 6px;
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--amber);
+      font-size: 11px;
+      font-weight: 600;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .actions-cell {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Modals */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-backdrop.active { display: flex; }
+
+    .modal-card {
+      background: #0f1624;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 18px;
+      width: 100%;
+      max-width: 520px;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+      padding: 28px;
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.8);
+      position: relative;
+    }
+    #user-details-modal .modal-card { max-width: 640px; }
+
+    .modal-close {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      font-size: 20px;
+      cursor: pointer;
+    }
+    .modal-close:hover { color: #fff; }
+
+    .modal-title { font-size: 18px; font-weight: 700; color: #fff; margin-bottom: 8px; }
+    .modal-desc { font-size: 13px; color: var(--text-muted); margin-bottom: 20px; }
+
+    .form-group { margin-bottom: 16px; }
+    .form-label { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .form-input {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 14px;
+      color: #fff;
+      font-size: 14px;
+      outline: none;
+    }
+    .form-input:focus { border-color: var(--amber); }
+
+    .copy-field {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .detail-section-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin: 16px 0 8px;
+    }
+
+    .ip-tag-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .ip-tag {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .ip-tag b { color: #fff; }
+
+    /* Toast */
+    .toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 200;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .toast {
+      background: #1e293b;
+      border: 1px solid var(--border);
+      color: #fff;
+      padding: 12px 18px;
+      border-radius: 10px;
+      font-size: 13px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transform: translateY(20px);
+      opacity: 0;
+      transition: all 200ms var(--ease-out);
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+
+    /* Auth view */
+    #auth-view {
+      min-height: 80vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .auth-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 36px;
+      width: 100%;
+      max-width: 400px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    }
+
+    @media (max-width: 768px) {
+      .container { padding: 20px 14px; }
+      header { flex-direction: column; align-items: flex-start; gap: 16px; }
+      .header-actions { width: 100%; justify-content: space-between; }
+      .chart-header { flex-direction: column; align-items: flex-start; }
+      .range-selector { width: 100%; justify-content: space-between; flex-wrap: wrap; }
+      .users-toolbar-controls { width: 100%; }
+      .user-filter-select { flex: 1 1 130px; }
+      #btn-export-users { flex: 1 1 100%; justify-content: center; }
+      .users-period-summary { margin: 0 14px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="ambient-glow"></div>
+
+  <!-- AUTH VIEW -->
+  <div id="auth-view" style="display: none;">
+    <div class="auth-card">
+      <div class="brand-logo" style="margin: 0 auto 16px; width: 48px; height: 48px; font-size: 24px;">✦</div>
+      <h2 style="font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 6px;">Davida Core</h2>
+      <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 24px;">Введите мастер-пароль для входа в панель</p>
+      <form id="login-form">
+        <div class="form-group">
+          <input type="password" id="login-password" class="form-input" placeholder="Пароль администратора" required autocomplete="current-password" style="text-align: center;">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 12px;">Войти</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- DASHBOARD VIEW -->
+  <div id="dashboard-view" style="display: none;">
+    <div class="container">
+      <header>
+        <div class="brand">
+          <div class="brand-logo">✦</div>
+          <div class="brand-text">
+            <h1>Davida Core</h1>
+            <span>Центральная консоль управления · мониторинг 3 узлов</span>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button id="btn-open-rotate-modal" class="btn btn-secondary btn-sm" type="button" title="Сменить мастер-пароль">
+            <span>🔐</span><span>Пароль</span>
+          </button>
+          <button id="btn-sync" class="btn btn-secondary">
+            <span>⟳</span>
+            <span>Синхронизировать</span>
+          </button>
+          <button id="btn-add-user" class="btn btn-primary">
+            <span>+</span>
+            <span>Новый пользователь</span>
+          </button>
+          <button id="btn-logout" class="btn btn-secondary btn-sm" type="button">Выйти</button>
+        </div>
+      </header>
+
+      <!-- Cluster Xray Stats Strip -->
+      <div class="metrics-summary-strip" style="margin-bottom: 24px;">
+        <div class="metric-strip-card">
+          <div class="metric-strip-label">Трафик кластера</div>
+          <div class="metric-strip-val mono" id="cluster-total-traffic">—</div>
+          <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;" class="mono" id="cluster-traffic-breakdown">↓ 0 B · ↑ 0 B</div>
+        </div>
+        <div class="metric-strip-card">
+          <div class="metric-strip-label">Пользователей онлайн</div>
+          <div class="metric-strip-val mono" style="color: var(--emerald);" id="cluster-online-users">0</div>
+          <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">подключены прямо сейчас</div>
+        </div>
+        <div class="metric-strip-card">
+          <div class="metric-strip-label">Всего пользователей</div>
+          <div class="metric-strip-val mono" id="cluster-total-users">—</div>
+          <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">персональные UUID v4</div>
+        </div>
+      </div>
+
+      <!-- Nodes Status Grid -->
+      <div class="section-header-wrap">
+        <div class="section-title">
+          <span>●</span>
+          <span>Матрица здоровья и качества узлов (Stealth Telemetry)</span>
+        </div>
+        <div id="metric-active-nodes" style="font-size: 12px; color: var(--text-muted);" class="mono">Загрузка...</div>
+      </div>
+      <div class="nodes-grid" id="nodes-container">
+        <!-- Dynamic Nodes -->
+      </div>
+
+      <!-- Advanced Telemetry Chart Panel -->
+      <div class="chart-panel">
+        <div class="chart-header">
+          <div class="chart-title-wrap">
+            <h3 id="chart-main-title">Телеметрия качества: Клиентский пинг (РФ)</h3>
+            <p id="chart-sub-title">Пассивный мониторинг сокетов ядра Linux · Без отправки зондов в РФ · Точный RTT клиентов</p>
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <div class="metric-tabs">
+              <button class="metric-tab active" data-metric="rtt">Клиентский RTT</button>
+              <button class="metric-tab" data-metric="retrans">Потери и шум (%)</button>
+              <button class="metric-tab" data-metric="score">Оценка качества</button>
+              <button class="metric-tab" data-metric="anycast">Аплинк Anycast</button>
+            </div>
+            <div class="range-selector">
+              <button class="range-btn" data-hours="1">1 час</button>
+              <button class="range-btn" data-hours="6">6 часов</button>
+              <button class="range-btn active" data-hours="24">24 часа</button>
+              <button class="range-btn" data-hours="168">7 дней</button>
+              <button class="range-btn" data-hours="720">30 дней</button>
+              <button class="range-btn" data-hours="2160">90 дней</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Summary Strip -->
+        <div class="metrics-summary-strip" id="chart-summary-strip">
+          <div class="metric-strip-card">
+            <div class="metric-strip-label">Медиана РФ (P50)</div>
+            <div class="metric-strip-val mono" id="summary-cluster-rtt">—</div>
+          </div>
+          <div class="metric-strip-card">
+            <div class="metric-strip-label">Средний шум / потери</div>
+            <div class="metric-strip-val mono" id="summary-cluster-retrans">—</div>
+          </div>
+          <div class="metric-strip-card">
+            <div class="metric-strip-label">Активных сессий</div>
+            <div class="metric-strip-val mono" id="summary-cluster-sessions">—</div>
+          </div>
+          <div class="metric-strip-card">
+            <div class="metric-strip-label">Чистый канал</div>
+            <div class="metric-strip-val" id="summary-best-channel">—</div>
+          </div>
+        </div>
+        <!-- SVG Chart & Tooltip -->
+        <div class="chart-svg-wrap" id="chart-wrapper">
+          <svg id="ping-chart-svg" preserveAspectRatio="none" viewBox="0 0 1000 180">
+            <text x="500" y="90" fill="#64748b" text-anchor="middle" font-size="13">Загрузка телеметрии...</text>
+          </svg>
+          <div class="chart-tooltip" id="chart-tooltip">
+            <div class="chart-tooltip-time" id="tooltip-time">00:00:00</div>
+            <div id="tooltip-rows"></div>
+          </div>
+        </div>
+
+        <!-- Legend with Toggles -->
+        <div class="chart-legend">
+          <div class="legend-item" data-node="ch">
+            <span class="legend-dot" style="background: #f59e0b;"></span>
+            <span>🇨🇭 Infomaniak (Швейцария)</span>
+          </div>
+          <div class="legend-item" data-node="ee">
+            <span class="legend-dot" style="background: #06b6d4;"></span>
+            <span>🇪🇪 Infonet (Эстония)</span>
+          </div>
+          <div class="legend-item" data-node="de">
+            <span class="legend-dot" style="background: #a855f7;"></span>
+            <span>🇩🇪 Dataforest (Германия)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Users Section -->
+      <div class="section-header-wrap">
+        <div class="section-title">
+          <span>👥</span>
+          <span>Пользователи и безопасность ссылок</span>
+        </div>
+        <div id="users-count-label" style="font-size: 12px; color: var(--text-muted);" class="mono">Всего: 0</div>
+      </div>
+
+      <div class="users-panel">
+        <div class="users-toolbar">
+          <div class="search-wrap">
+            <span class="search-icon">🔍</span>
+            <input type="search" id="user-search" class="search-input" placeholder="Поиск пользователя..." autocomplete="off">
+          </div>
+          <div class="users-toolbar-controls">
+            <select id="user-period" class="form-input user-filter-select" aria-label="Период трафика">
+              <option value="1">Сегодня</option>
+              <option value="7" selected>7 дней</option>
+              <option value="30">30 дней</option>
+            </select>
+            <select id="user-status-filter" class="form-input user-filter-select" aria-label="Фильтр статуса">
+              <option value="all">Все пользователи</option>
+              <option value="online">Онлайн</option>
+              <option value="active">Активные за период</option>
+              <option value="offline">Офлайн</option>
+              <option value="risk">Есть предупреждение</option>
+            </select>
+            <select id="user-sort" class="form-input user-filter-select" aria-label="Сортировка">
+              <option value="traffic_desc">Трафик: больше</option>
+              <option value="traffic_asc">Трафик: меньше</option>
+              <option value="recent">Последняя активность</option>
+              <option value="downloads">Скачивания</option>
+              <option value="name">Имя</option>
+            </select>
+            <button id="btn-export-users" class="btn btn-secondary btn-sm" type="button">Экспорт CSV</button>
+          </div>
+        </div>
+
+        <div class="metrics-summary-strip users-period-summary" id="users-period-summary" aria-live="polite">
+          <div class="metric-strip-card"><div class="metric-strip-label">Трафик за период</div><div class="metric-strip-val mono" id="users-period-total">—</div></div>
+          <div class="metric-strip-card"><div class="metric-strip-label">Входящий / исходящий</div><div class="metric-strip-val mono" id="users-period-split">—</div></div>
+          <div class="metric-strip-card"><div class="metric-strip-label">Активные пользователи</div><div class="metric-strip-val mono" id="users-period-active">—</div></div>
+          <div class="metric-strip-card"><div class="metric-strip-label">Суммарное время пользователей · оценка</div><div class="metric-strip-val mono" id="users-period-time">—</div></div>
+        </div>
+        <p id="user-stats-note" class="user-stats-note">Время активности — оценка по опросам; история начинается с запуска сбора.</p>
+
+        <div class="users-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Пользователь</th>
+                <th>Статус</th>
+                <th>За период / всего</th>
+                <th>PIN / Пароль</th>
+                <th>Скачиваний</th>
+                <th>Уникальных IP</th>
+                <th style="text-align: right;">Действия</th>
+              </tr>
+            </thead>
+            <tbody id="users-table-body">
+              <tr>
+                <td colspan="7" style="text-align: center; padding: 32px; color: var(--text-dim);">Загрузка...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: User Details & Links -->
+  <div class="modal-backdrop" id="user-details-modal">
+    <div class="modal-card">
+      <button class="modal-close" onclick="closeModals()">✕</button>
+      <h3 class="modal-title" id="details-modal-title">Доступ пользователя</h3>
+      <p class="modal-desc" id="details-modal-desc">Персональные ключи, ссылки и распределение IP-адресов</p>
+
+      <div id="details-leak-warning" style="margin-bottom: 16px; display: none;">
+        <div class="leak-warning-badge" style="width: 100%; padding: 8px 12px; justify-content: flex-start; font-size: 12px;">
+          <span id="details-leak-text">⚠ Внимание: возможное разделение ссылки</span>
+        </div>
+      </div>
+
+      <div class="detail-section-title">Трафик и статус (Xray):</div>
+      <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <div style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; font-weight: 700;">Трафик</div>
+          <div class="mono" id="details-xray-traffic" style="font-size: 14px; font-weight: 700; color: #fff; margin-top: 2px;">0 B</div>
+        </div>
+        <div style="text-align: right;">
+          <div style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; font-weight: 700;">Статус соединения</div>
+          <div id="details-xray-status" style="margin-top: 4px;">—</div>
+        </div>
+      </div>
+
+      <div class="detail-section-title">Трафик по дням · последние 30 дней</div>
+      <div id="details-traffic-history-note" class="traffic-history-note">История собирается с момента включения новой статистики.</div>
+      <div id="details-traffic-history" class="traffic-history" aria-label="График суточного трафика"></div>
+
+      <div class="detail-section-title">Чистая ссылка (с запросом PIN):</div>
+      <div class="copy-field">
+        <input type="text" id="details-clean-url" class="form-input mono" readonly>
+        <button class="btn btn-secondary btn-sm" onclick="copyInput('details-clean-url')">Копировать</button>
+      </div>
+
+      <div class="detail-section-title">Ссылка с PIN (автовход без ввода пароля):</div>
+      <div class="copy-field">
+        <input type="text" id="details-pin-url" class="form-input mono" readonly>
+        <button class="btn btn-primary btn-sm" onclick="copyInput('details-pin-url')">Копировать</button>
+      </div>
+
+      <div class="detail-section-title">Ссылка на добавление в HAPP в 1 клик:</div>
+      <div class="copy-field">
+        <input type="text" id="details-happ-url" class="form-input mono" readonly>
+        <button class="btn btn-secondary btn-sm" onclick="copyInput('details-happ-url')">Копировать</button>
+      </div>
+
+      <div class="detail-section-title">Топ IP-адресов, скачивавших подписку:</div>
+      <div class="ip-tag-list" id="details-top-ips">
+        <span class="ip-tag">Нет данных</span>
+      </div>
+
+      <div class="detail-section-title">Клиенты (User-Agent):</div>
+      <div class="ip-tag-list" id="details-top-uas">
+        <span class="ip-tag">Нет данных</span>
+      </div>
+
+      <div class="detail-section-title">Готовое сообщение для отправки пользователю:</div>
+      <div class="form-group">
+        <textarea id="details-share-text" class="form-input mono" rows="4" readonly style="font-size: 12px; resize: none;"></textarea>
+      </div>
+      <button class="btn btn-secondary" style="width: 100%; justify-content: center;" onclick="copyInput('details-share-text')">
+        Скопировать сообщение для Telegram
+      </button>
+    </div>
+  </div>
+
+  <!-- MODAL: Edit User PIN -->
+  <div class="modal-backdrop" id="edit-pin-modal">
+    <div class="modal-card" style="max-width: 400px;">
+      <button class="modal-close" onclick="closeModals()">✕</button>
+      <h3 class="modal-title">Изменить пароль / PIN</h3>
+      <p class="modal-desc" id="edit-pin-desc">Укажите новый пароль для доступа к персональной странице</p>
+      <form id="edit-pin-form">
+        <input type="hidden" id="edit-pin-username">
+        <div class="form-group">
+          <label class="form-label">Новый пароль или PIN</label>
+          <input type="text" id="edit-pin-input" class="form-input mono" required placeholder="Например, 4819 или mypass">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">Сохранить пароль</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: Add User -->
+  <div class="modal-backdrop" id="add-modal">
+    <div class="modal-card" style="max-width: 420px;">
+      <button class="modal-close" onclick="closeModals()">✕</button>
+      <h3 class="modal-title">Создать пользователя</h3>
+      <p class="modal-desc">Будут автоматически сгенерированы VLESS UUID, AWG ключи, личная страница и подписка</p>
+      <form id="add-user-form">
+        <div class="form-group">
+          <label class="form-label">Имя пользователя (латиница)</label>
+          <input type="text" id="new-username" class="form-input mono" placeholder="например, artemis" required pattern="[A-Za-z0-9_-]{2,32}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">PIN / Пароль (необязательно)</label>
+          <input type="text" id="new-user-pin" class="form-input mono" placeholder="Если пусто, сгенерируется 4-значный PIN">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">Создать доступ</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast notifications -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script>
+    // State
+    let authToken = localStorage.getItem('davida_token');
+    let usersData = [];
+    let userPeriodDays = 7;
+    let currentHistoryHours = 24;
+    let rawHistoryData = [];
+    let visibleNodes = { ch: true, ee: true, de: true };
+    let dashboardTimer = null;
+    let historyTimer = null;
+    let dashboardLoading = false;
+    let activeDetailUser = null;
+    const nodeColors = { ch: '#f59e0b', ee: '#06b6d4', de: '#a855f7' };
+    const nodeNames = { ch: '🇨🇭 Infomaniak', ee: '🇪🇪 Infonet', de: '🇩🇪 Dataforest' };
+
+    const BASE_PATH = window.location.pathname.startsWith('/admin') ? '' : '';
+
+    // API Helper
+    async function api(path, options = {}) {
+      const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+      if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+      
+      try {
+        const res = await fetch(BASE_PATH + path, { ...options, headers });
+        const text = await res.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          throw new Error('Некорректный ответ сервера');
+        }
+
+        if (res.status === 401) {
+          showAuthView();
+          throw new Error('Требуется авторизация');
+        }
+        if (!res.ok) {
+          throw new Error(data.error || 'Ошибка запроса');
+        }
+        return data;
+      } catch (err) {
+        showToast(err.message, 'error');
+        throw err;
+      }
+    }
+
+    // UI helpers. Treat server and log-derived strings as text, not markup.
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>\"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[ch]));
+    }
+
+    function showToast(text, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      const icon = document.createElement('span');
+      icon.textContent = type === 'error' ? '❌' : '✅';
+      const message = document.createElement('span');
+      message.textContent = String(text ?? '');
+      toast.append(icon, message);
+      container.appendChild(toast);
+      setTimeout(() => toast.classList.add('show'), 10);
+      setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 200);
+      }, 3500);
+    }
+
+    function showAuthView() {
+      if (dashboardTimer) clearInterval(dashboardTimer);
+      if (historyTimer) clearInterval(historyTimer);
+      dashboardTimer = historyTimer = null;
+      document.getElementById('auth-view').style.display = 'flex';
+      document.getElementById('dashboard-view').style.display = 'none';
+    }
+
+    function showDashboardView() {
+      document.getElementById('auth-view').style.display = 'none';
+      document.getElementById('dashboard-view').style.display = 'block';
+      if (dashboardTimer) clearInterval(dashboardTimer);
+      if (historyTimer) clearInterval(historyTimer);
+      loadDashboard();
+      loadHistory(currentHistoryHours);
+      dashboardTimer = setInterval(loadDashboard, 15000);
+      historyTimer = setInterval(() => loadHistory(currentHistoryHours), 30000);
+    }
+
+    function closeModals() {
+      document.querySelectorAll('.modal-backdrop').forEach(m => m.classList.remove('active'));
+    }
+
+    function copyInput(id) {
+      const el = document.getElementById(id);
+      el.select();
+      navigator.clipboard.writeText(el.value);
+      showToast('Скопировано в буфер обмена');
+    }
+
+    // Load Data
+    async function loadDashboard() {
+      if (dashboardLoading) return;
+      dashboardLoading = true;
+      try {
+        const [statusData, usersResponse, overviewData, periodData] = await Promise.all([
+          api('/api/status'),
+          api('/api/users'),
+          api('/api/stats/overview').catch(() => null),
+          api(`/api/stats/users?days=${userPeriodDays}`).catch(() => null)
+        ]);
+
+        renderNodes(statusData.nodes || []);
+        document.getElementById('metric-active-nodes').textContent = `${statusData.active_nodes || 0} / ${(statusData.nodes || []).length} узлов онлайн`;
+
+        if (overviewData) {
+          document.getElementById('cluster-total-traffic').textContent = overviewData.total_formatted || '0 B';
+          document.getElementById('cluster-traffic-breakdown').textContent = `↓ ${overviewData.down_formatted || '0 B'} · ↑ ${overviewData.up_formatted || '0 B'}`;
+          document.getElementById('cluster-online-users').textContent = `${overviewData.online_count || 0}`;
+          document.getElementById('cluster-total-users').textContent = `${usersResponse.count ?? 0}`;
+        }
+
+        const periodMap = new Map((periodData?.users || []).map(u => [u.username, u]));
+        usersData = (usersResponse.users || []).map(u => ({...u, period: periodMap.get(u.username) || null}));
+        renderUserPeriodSummary(periodData);
+        applyUserFilters();
+      } catch (e) {
+        console.error(e);
+      } finally {
+        dashboardLoading = false;
+      }
+    }
+
+    async function loadHistory(hours) {
+      currentHistoryHours = hours;
+      try {
+        const data = await api(`/api/nodes/history?hours=${hours}`);
+        rawHistoryData = data.history || [];
+        renderChart(rawHistoryData);
+        renderSummary(data.summary || {});
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    let currentMetric = 'rtt'; // 'rtt', 'retrans', 'score', 'anycast'
+
+    const metricConfig = {
+      rtt: {
+        title: 'Телеметрия качества: Клиентский пинг (РФ)',
+        subtitle: 'Пассивный мониторинг сокетов ядра Linux · Без отправки зондов в РФ · Точный RTT клиентов',
+        unit: 'ms',
+        digits: 1,
+        defaultMax: 100,
+        step: 20
+      },
+      retrans: {
+        title: 'Шум и скрытые потери пакетов: TCP Retransmit (%)',
+        subtitle: 'Процент повторных пакетов ядра на сокетах клиентов · Выявляет микропотери канала хостера',
+        unit: '%',
+        digits: 2,
+        defaultMax: 20,
+        step: 5
+      },
+      score: {
+        title: 'Интегральная оценка стабильности узлов (Quality Score)',
+        subtitle: 'Скоринг качества 0–100% на основе ретрансмитов ядра, джиттера и доступности',
+        unit: '%',
+        digits: 0,
+        defaultMax: 100,
+        step: 25
+      },
+      anycast: {
+        title: 'Связность дата-центров: European Anycast (1.1.1.1)',
+        subtitle: 'Сверхлёгкий эталонный пинг внутри Европы · Качество магистрального аплинка ЦОД',
+        unit: 'ms',
+        digits: 2,
+        defaultMax: 10,
+        step: 2
+      }
+    };
+
+    function renderNodes(nodes) {
+      const container = document.getElementById('nodes-container');
+      container.innerHTML = nodes.map(n => {
+        const score = n.quality_score !== undefined ? n.quality_score : 100;
+        let badgeClass = 'score-optimal';
+        let badgeText = `${score}% · Отличный`;
+
+        if (!n.online) {
+          badgeClass = 'score-degraded';
+          badgeText = 'Недоступен';
+        } else if (n.active_sessions === 0) {
+          badgeClass = 'score-reserve';
+          badgeText = 'Резерв';
+        } else if (score >= 90) {
+          badgeClass = 'score-optimal';
+          badgeText = `${score}% · Отличный`;
+        } else if (score >= 75) {
+          badgeClass = 'score-stable';
+          badgeText = `${score}% · Стабильный`;
+        } else if (score >= 50) {
+          badgeClass = 'score-noisy';
+          badgeText = `${score}% · Шумный`;
+        } else {
+          badgeClass = 'score-degraded';
+          badgeText = `${score}% · Потери!`;
+        }
+
+        const rttP50 = n.client_rtt_p50 !== null && n.client_rtt_p50 !== undefined ? `${n.client_rtt_p50} ms` : (n.latency_ms ? `${n.latency_ms} ms` : '—');
+        const rttP95 = n.client_rtt_p95 ? ` (P95: ${n.client_rtt_p95})` : '';
+        const retransPct = n.retrans_rate_pct !== undefined ? n.retrans_rate_pct : 0.0;
+        const retransClass = retransPct >= 5.0 ? 'nm-value mono nm-warn' : 'nm-value mono';
+        const anycastStr = n.anycast_ms !== null && n.anycast_ms !== undefined ? `${n.anycast_ms} ms` : '—';
+        const sessionsStr = n.active_sessions !== undefined ? `${n.active_sessions}` : '0';
+
+        return `
+          <div class="node-card">
+            <div class="node-header">
+              <div class="node-info-col">
+                <span class="node-name">${escapeHtml(n.name)}</span>
+                <span class="node-dc-sub">${escapeHtml(n.dc)}</span>
+              </div>
+              <span class="score-badge ${badgeClass}">
+                <span class="dot"></span>
+                ${badgeText}
+              </span>
+            </div>
+            <div class="node-metrics-matrix">
+              <div class="nm-item">
+                <span class="nm-label">Пинг РФ (P50)</span>
+                <span class="nm-value mono">${rttP50}</span>
+              </div>
+              <div class="nm-item">
+                <span class="nm-label">Потери (Retrans)</span>
+                <span class="${retransClass}">${retransPct.toFixed(1)}%</span>
+              </div>
+              <div class="nm-item">
+                <span class="nm-label">Сессий</span>
+                <span class="nm-value mono">${sessionsStr}</span>
+              </div>
+              <div class="nm-item">
+                <span class="nm-label">Anycast ЦОД</span>
+                <span class="nm-value mono">${anycastStr}</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderSummary(summary) {
+      let rtts = [];
+      let retransList = [];
+      let totalSessions = 0;
+      let bestNode = '—';
+      let maxScore = -1;
+
+      Object.keys(summary).forEach(nid => {
+        const s = summary[nid];
+        if (s.client_rtt_p50) rtts.push(s.client_rtt_p50);
+        if (s.retrans_rate_pct !== undefined && s.active_sessions > 0) retransList.push(s.retrans_rate_pct);
+        if (s.active_sessions) totalSessions += s.active_sessions;
+
+        const score = s.quality_score !== undefined ? s.quality_score : 100;
+        if (score > maxScore && s.active_sessions > 0) {
+          maxScore = score;
+          bestNode = `${nodeNames[nid]} (${score}%)`;
+        }
+      });
+
+      if (bestNode === '—' && Object.keys(summary).length > 0) {
+        // Fallback if all nodes are idle
+        bestNode = `${nodeNames['ch']} (Резерв)`;
+      }
+
+      rtts.sort((a,b)=>a-b);
+      const medianRtt = rtts.length ? rtts[Math.floor(rtts.length/2)].toFixed(1) + ' ms' : '—';
+      const avgRetrans = retransList.length ? (retransList.reduce((a,b)=>a+b,0)/retransList.length).toFixed(1) + '%' : '0.0%';
+
+      const elRtt = document.getElementById('summary-cluster-rtt');
+      if (elRtt) elRtt.textContent = medianRtt;
+
+      const elRetrans = document.getElementById('summary-cluster-retrans');
+      if (elRetrans) elRetrans.textContent = avgRetrans;
+
+      const elSessions = document.getElementById('summary-cluster-sessions');
+      if (elSessions) elSessions.textContent = `${totalSessions}`;
+
+      const elBest = document.getElementById('summary-best-channel');
+      if (elBest) elBest.textContent = bestNode;
+    }
+
+    // Chart Rendering & Interactive Metric Switching
+    function renderChart(history) {
+      const svg = document.getElementById('ping-chart-svg');
+      if (!history || history.length < 2) {
+        svg.innerHTML = `<text x="500" y="90" fill="#64748b" text-anchor="middle" font-size="13">Накопление телеметрии ядра...</text>`;
+        return;
+      }
+
+      const cfg = metricConfig[currentMetric] || metricConfig.rtt;
+      const width = 1000;
+      const height = 180;
+      const padding = 24;
+
+      // Extract values for the active metric
+      const getVal = (h, nid) => {
+        if (!h) return null;
+        if (currentMetric === 'rtt') {
+          return h.rtt && h.rtt[nid] !== undefined ? h.rtt[nid] : (h.pings ? h.pings[nid] : null);
+        }
+        if (h[currentMetric] && h[currentMetric][nid] !== undefined) {
+          return h[currentMetric][nid];
+        }
+        return null;
+      };
+
+      // Find max value across visible nodes
+      let maxVal = cfg.defaultMax;
+      history.forEach(h => {
+        ['ch', 'fi', 'ee', 'de'].forEach(nid => {
+          if (visibleNodes[nid]) {
+            const v = getVal(h, nid);
+            if (v !== null && v !== undefined && v > maxVal) {
+              maxVal = v;
+            }
+          }
+        });
+      });
+
+      maxVal = Math.ceil(maxVal / cfg.step) * cfg.step;
+      if (maxVal <= 0) maxVal = cfg.defaultMax;
+
+      let pathsHtml = '';
+
+      // Grid lines
+      for (let y = 0; y <= 3; y++) {
+        const yPos = padding + (height - padding * 2) * (y / 3);
+        const val = (maxVal * (1 - y / 3)).toFixed(cfg.digits);
+        pathsHtml += `
+          <line x1="0" y1="${yPos}" x2="${width}" y2="${yPos}" stroke="rgba(255,255,255,0.05)" stroke-dasharray="4"/>
+          <text x="6" y="${yPos - 4}" fill="#64748b" font-size="10" font-family="Ubuntu Mono">${val} ${cfg.unit}</text>
+        `;
+      }
+
+      // Time axis labels
+      const step = Math.floor((history.length - 1) / 4);
+      for (let i = 0; i <= 4; i++) {
+        const idx = Math.min(i * step, history.length - 1);
+        const x = (idx / (history.length - 1)) * (width - padding * 2) + padding;
+        const d = new Date(history[idx].timestamp * 1000);
+        const timeStr = currentHistoryHours > 24 
+          ? `${d.getDate()}.${d.getMonth()+1} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+          : `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+        pathsHtml += `<text x="${x}" y="${height - 4}" fill="#64748b" font-size="10" text-anchor="middle" font-family="Ubuntu Mono">${timeStr}</text>`;
+      }
+
+      // Render lines for visible nodes
+      ['ch', 'fi', 'ee', 'de'].forEach(nodeId => {
+        if (!visibleNodes[nodeId]) return;
+        const pts = [];
+        history.forEach((h, idx) => {
+          const x = (idx / (history.length - 1)) * (width - padding * 2) + padding;
+          const val = getVal(h, nodeId);
+          if (val !== null && val !== undefined) {
+            const y = height - padding - (val / maxVal) * (height - padding * 2);
+            pts.push(`${x},${y}`);
+          }
+        });
+
+        if (pts.length > 1) {
+          pathsHtml += `<polyline fill="none" stroke="${nodeColors[nodeId]}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.9" points="${pts.join(' ')}" />`;
+        }
+      });
+
+      pathsHtml += `<line id="chart-crosshair" x1="0" y1="0" x2="0" y2="${height}" stroke="rgba(255,255,255,0.25)" stroke-dasharray="3" style="display:none;" />`;
+      svg.innerHTML = pathsHtml;
+    }
+
+    // Chart Crosshair & Tooltip Interactions
+    const chartWrapper = document.getElementById('chart-wrapper');
+    const tooltip = document.getElementById('chart-tooltip');
+
+    chartWrapper.addEventListener('mousemove', (e) => {
+      if (!rawHistoryData || rawHistoryData.length < 2) return;
+      const rect = chartWrapper.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const pct = Math.max(0, Math.min(1, mouseX / rect.width));
+      const idx = Math.round(pct * (rawHistoryData.length - 1));
+      const point = rawHistoryData[idx];
+      if (!point) return;
+
+      const crosshair = document.getElementById('chart-crosshair');
+      if (crosshair) {
+        crosshair.setAttribute('x1', pct * 1000);
+        crosshair.setAttribute('x2', pct * 1000);
+        crosshair.style.display = 'block';
+      }
+
+      const d = new Date(point.timestamp * 1000);
+      document.getElementById('tooltip-time').textContent = d.toLocaleTimeString('ru-RU');
+
+      const cfg = metricConfig[currentMetric] || metricConfig.rtt;
+      let rowsHtml = '';
+      ['ch', 'fi', 'ee', 'de'].forEach(nid => {
+        if (!visibleNodes[nid]) return;
+        let val = null;
+        if (currentMetric === 'rtt') {
+          val = point.rtt && point.rtt[nid] !== undefined ? point.rtt[nid] : (point.pings ? point.pings[nid] : null);
+        } else if (point[currentMetric]) {
+          val = point[currentMetric][nid];
+        }
+
+        const valStr = val !== null && val !== undefined ? `${val} ${cfg.unit}` : '—';
+        rowsHtml += `
+          <div class="chart-tooltip-row">
+            <span style="color:${nodeColors[nid]};">${nodeNames[nid]}</span>
+            <span class="mono" style="font-weight:700;">${valStr}</span>
+          </div>
+        `;
+      });
+      document.getElementById('tooltip-rows').innerHTML = rowsHtml;
+
+      tooltip.style.display = 'block';
+      tooltip.style.left = `${mouseX}px`;
+      tooltip.style.top = `${Math.min(e.clientY - rect.top, 140)}px`;
+    });
+
+    chartWrapper.addEventListener('mouseleave', () => {
+      tooltip.style.display = 'none';
+      const crosshair = document.getElementById('chart-crosshair');
+      if (crosshair) crosshair.style.display = 'none';
+    });
+
+    // Metric Switcher Tabs Handler
+    document.querySelectorAll('.metric-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.metric-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        currentMetric = tab.getAttribute('data-metric');
+
+        const cfg = metricConfig[currentMetric] || metricConfig.rtt;
+        const elTitle = document.getElementById('chart-main-title');
+        const elSub = document.getElementById('chart-sub-title');
+        if (elTitle) elTitle.textContent = cfg.title;
+        if (elSub) elSub.textContent = cfg.subtitle;
+
+        renderChart(rawHistoryData);
+      });
+    });
+
+    // Legend Click Toggles
+    document.querySelectorAll('.legend-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const nid = item.dataset.node;
+        visibleNodes[nid] = !visibleNodes[nid];
+        item.classList.toggle('dimmed', !visibleNodes[nid]);
+        renderChart(rawHistoryData);
+      });
+    });
+
+    // Range Button Click
+    document.querySelectorAll('.range-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        loadHistory(parseInt(btn.dataset.hours));
+      });
+    });
+
+    function formatDuration(seconds) {
+      const minutes = Math.max(0, Math.floor((Number(seconds) || 0) / 60));
+      if (minutes < 60) return `${minutes} мин`;
+      const hours = Math.floor(minutes / 60);
+      const rest = minutes % 60;
+      return rest ? `${hours} ч ${rest} мин` : `${hours} ч`;
+    }
+
+    function formatTimeAgo(timestamp) {
+      const ts = Number(timestamp) || 0;
+      if (!ts) return 'Нет данных';
+      const minutes = Math.max(0, Math.floor((Date.now() / 1000 - ts) / 60));
+      if (minutes < 1) return 'только что';
+      if (minutes < 60) return `${minutes} мин назад`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `${hours} ч назад`;
+      return `${Math.floor(hours / 24)} дн назад`;
+    }
+
+    function renderUserPeriodSummary(data) {
+      const period = data || {};
+      document.getElementById('users-period-total').textContent = period.total_formatted || '0 B';
+      document.getElementById('users-period-split').textContent = `↓ ${period.down_formatted || '0 B'} · ↑ ${period.up_formatted || '0 B'}`;
+      document.getElementById('users-period-active').textContent = `${period.active_users || 0} / ${period.total_users || usersData.length}`;
+      document.getElementById('users-period-time').textContent = formatDuration(period.active_seconds || 0);
+      const note = document.getElementById('user-stats-note');
+      const firstDay = period.history_available_from ? new Date(period.history_available_from * 1000).toLocaleDateString('ru-RU') : null;
+      note.textContent = firstDay
+        ? `История трафика собирается с ${firstDay}; более ранние суточные данные недоступны. Активное время — оценка по опросам.`
+        : 'Суточная история начнёт заполняться после активности пользователей. Активное время — оценка по опросам.';
+    }
+
+    function applyUserFilters() {
+      const query = document.getElementById('user-search').value.toLowerCase().trim();
+      const status = document.getElementById('user-status-filter').value;
+      const sort = document.getElementById('user-sort').value;
+      const filtered = usersData.filter(u => {
+        const xray = u.xray || {};
+        const period = u.period || {};
+        if (query && !u.username.toLowerCase().includes(query)) return false;
+        if (status === 'online' && !xray.is_online) return false;
+        if (status === 'offline' && xray.is_online) return false;
+        if (status === 'active' && !(xray.is_online || period.bytes_total > 0 || period.active_seconds > 0)) return false;
+        if (status === 'risk' && !u.leak_warning) return false;
+        return true;
+      });
+      filtered.sort((a, b) => {
+        const ap = a.period || {}, bp = b.period || {};
+        if (sort === 'traffic_asc') return (ap.bytes_total || 0) - (bp.bytes_total || 0);
+        if (sort === 'recent') return (bp.last_seen || Date.parse(bp.last_seen_vpn) || 0) - (ap.last_seen || Date.parse(ap.last_seen_vpn) || 0);
+        if (sort === 'downloads') return (b.sub_downloads || 0) - (a.sub_downloads || 0);
+        if (sort === 'name') return a.username.localeCompare(b.username);
+        return (bp.bytes_total || 0) - (ap.bytes_total || 0);
+      });
+      renderUsers(filtered);
+      return filtered;
+    }
+
+    // Users Rendering
+    function renderUsers(users) {
+      const tbody = document.getElementById('users-table-body');
+      document.getElementById('users-count-label').textContent = `Показано ${users.length} из ${usersData.length}`;
+      if (users.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-dim);">Пользователи не найдены</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = users.map(u => {
+        const xr = u.xray || { is_online: false, total_formatted: '0 B', down_formatted: '0 B', up_formatted: '0 B' };
+        const period = u.period || { total_formatted: '0 B', down_formatted: '0 B', up_formatted: '0 B', active_minutes: 0 };
+        const username = escapeHtml(u.username);
+        const landingUrl = escapeHtml(u.landing_url || '#');
+        const warning = u.leak_warning ? escapeHtml(u.leak_warning) : '';
+        return `
+        <tr>
+          <td><div class="user-name-cell"><div class="user-avatar">${escapeHtml(u.username.substring(0, 2).toUpperCase())}</div><div><div>${username}</div><div class="user-subpath mono">/nect/${username}</div></div></div></td>
+          <td><span class="status-badge ${xr.is_online ? 'status-online' : 'status-offline'}"><span class="dot"></span>${xr.is_online ? 'Онлайн' : 'Офлайн'}</span><div class="user-period-meta">${escapeHtml(formatTimeAgo(period.last_seen))}</div></td>
+          <td><div><span class="mono user-period-value">${escapeHtml(period.total_formatted || '0 B')}</span><div class="user-period-meta mono">↓ ${escapeHtml(period.down_formatted || '0 B')} · ↑ ${escapeHtml(period.up_formatted || '0 B')}</div><div class="user-period-meta">Активно ~${escapeHtml(formatDuration(period.active_seconds || 0))} · всего ${escapeHtml(xr.total_formatted || '0 B')}</div></div></td>
+          <td><div class="pin-badge"><span id="pin-val-${username}" class="mono">••••</span><button type="button" data-action="pin-toggle" data-user="${username}" title="Показать/скрыть">👁</button><button type="button" data-action="pin-edit" data-user="${username}" title="Изменить пароль">✏️</button></div></td>
+          <td><span class="mono">${Number(u.sub_downloads || 0)}</span></td>
+          <td><span class="mono">${Number(u.unique_ips_count || 0)}</span>${warning ? `<span class="leak-warning-badge" title="${warning}">⚠ Multi-IP</span>` : ''}</td>
+          <td style="text-align:right"><div class="actions-cell" style="justify-content:flex-end"><button type="button" class="btn btn-secondary btn-sm" data-action="details" data-user="${username}">Мониторинг</button><a href="${landingUrl}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm" title="Открыть страницу">↗</a><button type="button" class="btn btn-danger-soft btn-sm" data-action="delete" data-user="${username}" title="Удалить">✕</button></div></td>
+        </tr>`;
+      }).join('');
+    }
+
+    document.getElementById('users-table-body').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-action]');
+      if (!button) return;
+      const username = button.dataset.user;
+      const user = usersData.find(item => item.username === username);
+      if (!user) return;
+      if (button.dataset.action === 'pin-toggle') togglePinVisibility(username, user.pin);
+      else if (button.dataset.action === 'pin-edit') openEditPin(username, user.pin);
+      else if (button.dataset.action === 'details') openUserDetails(username);
+      else if (button.dataset.action === 'delete') deleteUserPrompt(username);
+    });
+
+    function togglePinVisibility(username, pin) {
+      const el = document.getElementById(`pin-val-${username}`);
+      if (el) el.textContent = el.textContent === '••••' ? String(pin || '••••') : '••••';
+    }
+
+    function openEditPin(username, currentPin) {
+      document.getElementById('edit-pin-username').value = username;
+      document.getElementById('edit-pin-input').value = currentPin;
+      document.getElementById('edit-pin-desc').textContent = `Пользователь: ${username}`;
+      document.getElementById('edit-pin-modal').classList.add('active');
+    }
+
+    document.getElementById('edit-pin-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('edit-pin-username').value;
+      const pin = document.getElementById('edit-pin-input').value.trim();
+      try {
+        await api('/api/users/pin', {
+          method: 'POST',
+          body: JSON.stringify({ username, pin })
+        });
+        closeModals();
+        showToast(`Пароль для ${username} обновлен`);
+        loadDashboard();
+      } catch (err) {}
+    });
+
+    function formatBytesClient(value) {
+      const bytes = Number(value) || 0;
+      if (bytes < 1024) return `${bytes} B`;
+      const units = ['KB', 'MB', 'GB', 'TB'];
+      let amount = bytes / 1024;
+      let index = 0;
+      while (amount >= 1024 && index < units.length - 1) { amount /= 1024; index++; }
+      return `${amount.toFixed(1)} ${units[index]}`;
+    }
+
+    async function loadUserTrafficHistory(username) {
+      const host = document.getElementById('details-traffic-history');
+      const note = document.getElementById('details-traffic-history-note');
+      host.innerHTML = '<div class="traffic-history-empty">Загрузка истории…</div>';
+      try {
+        const data = await api(`/api/stats/users/${encodeURIComponent(username)}/history?days=30`);
+        if (activeDetailUser !== username) return;
+        const history = data.history || [];
+        const first = data.history_available_from ? new Date(data.history_available_from * 1000).toLocaleDateString('ru-RU', {timeZone: 'UTC'}) : null;
+        note.textContent = first ? `История собирается с ${first}; более ранние данные отсутствуют.` : 'История начинает собираться с момента подключения новой статистики.';
+        const maxBytes = Math.max(1, ...history.map(day => Number(day.bytes_total) || 0));
+        if (!history.some(day => Number(day.bytes_total) > 0 || Number(day.active_seconds) > 0)) {
+          host.innerHTML = '<div class="traffic-history-empty">Пока нет активности в выбранном периоде</div>';
+          return;
+        }
+        host.innerHTML = history.map((day, index) => {
+          const total = Number(day.bytes_total) || 0;
+          const height = total ? Math.max(5, Math.round(total / maxBytes * 100)) : 2;
+          const label = new Date(day.day_ts * 1000).toLocaleDateString('ru-RU', {day: '2-digit', month: '2-digit', timeZone: 'UTC'});
+          const title = `${label}: ${formatBytesClient(total)} · онлайн ~${formatDuration(day.active_seconds || 0)}`;
+          const axisLabel = index % 5 === 0 || index === history.length - 1 ? label : '';
+          return `<div class="traffic-history-column"><div class="traffic-history-bar ${total ? '' : 'is-empty'}" style="height:${height}%" title="${escapeHtml(title)}"></div><span>${escapeHtml(axisLabel)}</span></div>`;
+        }).join('');
+      } catch (error) {
+        if (activeDetailUser === username) {
+          note.textContent = 'Не удалось загрузить историю.';
+          host.innerHTML = '';
+        }
+      }
+    }
+
+    function openUserDetails(username) {
+      const u = usersData.find(x => x.username === username);
+      if (!u) return;
+
+      document.getElementById('details-modal-title').textContent = `Доступ: ${u.username}`;
+      document.getElementById('details-clean-url').value = u.landing_url;
+      document.getElementById('details-pin-url').value = u.landing_url_with_pin;
+      document.getElementById('details-happ-url').value = u.happ_add_url;
+
+      const xr = u.xray || { is_online: false, total_formatted: '0 B', down_formatted: '0 B', up_formatted: '0 B', last_seen_vpn: null };
+      const statusHtml = xr.is_online 
+        ? '<span class="status-badge status-online"><span class="dot"></span>В сети (Онлайн)</span>' 
+        : '<span class="status-badge status-offline"><span class="dot"></span>Офлайн</span>';
+      document.getElementById('details-xray-status').innerHTML = statusHtml;
+      document.getElementById('details-xray-traffic').textContent = `${xr.total_formatted} (↓ ${xr.down_formatted} / ↑ ${xr.up_formatted})`;
+
+      const leakBox = document.getElementById('details-leak-warning');
+      if (u.leak_warning) {
+        document.getElementById('details-leak-text').textContent = u.leak_warning;
+        leakBox.style.display = 'block';
+      } else {
+        leakBox.style.display = 'none';
+      }
+
+      // Top IPs
+      const ipsWrap = document.getElementById('details-top-ips');
+      if (u.top_ips && u.top_ips.length) {
+        ipsWrap.innerHTML = u.top_ips.map(item => `
+          <span class="ip-tag mono">${escapeHtml(item.ip)} (<b>${Number(item.count) || 0}</b>)</span>
+        `).join('');
+      } else {
+        ipsWrap.innerHTML = '<span class="ip-tag">Нет скачиваний</span>';
+      }
+
+      // User Agents
+      const uasWrap = document.getElementById('details-top-uas');
+      if (u.user_agents && u.user_agents.length) {
+        uasWrap.innerHTML = u.user_agents.map(ua => `
+          <span class="ip-tag">${escapeHtml(ua)}</span>
+        `).join('');
+      } else {
+        uasWrap.innerHTML = '<span class="ip-tag">Нет данных</span>';
+      }
+
+      activeDetailUser = username;
+      loadUserTrafficHistory(username);
+      document.getElementById('details-share-text').value = 
+`Привет! Твоя персональная ссылка для подключения к сети:
+${u.landing_url_with_pin}
+
+Твой пароль для входа: ${u.pin}
+
+Если у тебя уже установлено приложение HAPP, можешь нажать ссылку выше и выбрать «Добавить в 1 клик».`;
+
+      document.getElementById('user-details-modal').classList.add('active');
+    }
+
+    async function deleteUserPrompt(username) {
+      if (!confirm(`Удалить доступ для пользователя "${username}"?`)) return;
+      try {
+        await api(`/api/users/${username}`, { method: 'DELETE' });
+        showToast(`Пользователь ${username} удален`);
+        loadDashboard();
+      } catch (e) {}
+    }
+
+    // Event Listeners
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const password = document.getElementById('login-password').value;
+      try {
+        const res = await api('/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ password })
+        });
+        authToken = res.token;
+        localStorage.setItem('davida_token', authToken);
+        showDashboardView();
+        showToast('Вход выполнен');
+      } catch (err) {}
+    });
+
+    document.getElementById('btn-add-user').addEventListener('click', () => {
+      document.getElementById('new-username').value = '';
+      document.getElementById('new-user-pin').value = '';
+      document.getElementById('add-modal').classList.add('active');
+    });
+
+    document.getElementById('add-user-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('new-username').value.trim();
+      const pin = document.getElementById('new-user-pin').value.trim() || undefined;
+      try {
+        const res = await api('/api/users', {
+          method: 'POST',
+          body: JSON.stringify({ username, pin })
+        });
+        closeModals();
+        showToast(`Пользователь ${username} создан`);
+        await loadDashboard();
+        openUserDetails(username);
+      } catch (err) {}
+    });
+
+    document.getElementById('btn-sync').addEventListener('click', async () => {
+      try {
+        showToast('Запуск синхронизации...');
+        await api('/api/sync', { method: 'POST' });
+        showToast('Синхронизация завершена успешно');
+        loadDashboard();
+      } catch (err) {}
+    });
+
+    document.getElementById('btn-logout').addEventListener('click', () => {
+      authToken = null;
+      localStorage.removeItem('davida_token');
+      document.getElementById('login-password').value = '';
+      showAuthView();
+    });
+
+    document.getElementById('user-search').addEventListener('input', applyUserFilters);
+    document.getElementById('user-status-filter').addEventListener('change', applyUserFilters);
+    document.getElementById('user-sort').addEventListener('change', applyUserFilters);
+    document.getElementById('user-period').addEventListener('change', (e) => {
+      userPeriodDays = Math.max(1, Math.min(30, parseInt(e.target.value, 10) || 7));
+      loadDashboard();
+    });
+
+    function exportUsersCsv() {
+      const rows = applyUserFilters();
+      const columns = ['Пользователь', 'Статус', 'Трафик за период (байт)', 'Входящий (байт)', 'Исходящий (байт)', 'Активное время (оценка, сек)', 'Скачивания подписки', 'Уникальные IP'];
+      const quote = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+      const body = rows.map(u => {
+        const p = u.period || {};
+        return [u.username, u.xray?.is_online ? 'online' : 'offline', p.bytes_total || 0, p.bytes_down || 0, p.bytes_up || 0, p.active_seconds || 0, u.sub_downloads || 0, u.unique_ips_count || 0].map(quote).join(',');
+      });
+      const blob = new Blob([String.fromCharCode(0xFEFF) + [columns.map(quote).join(','), ...body].join(String.fromCharCode(13, 10))], {type: 'text/csv;charset=utf-8'});
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `vpn-users-${userPeriodDays}d.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    document.getElementById('btn-export-users').addEventListener('click', exportUsersCsv);
+
+    // Init
+    if (authToken) {
+      showDashboardView();
+    } else {
+      showAuthView();
+    }
+
+    // Rotate Master Password Handlers
+    const modalRotate = document.getElementById('modal-rotate-password');
+    const btnOpenRotate = document.getElementById('btn-open-rotate-modal');
+    const btnCloseRotate = document.getElementById('btn-close-rotate-modal');
+    const btnCancelRotate = document.getElementById('btn-cancel-rotate');
+    const btnSubmitRotate = document.getElementById('btn-submit-rotate');
+    const rotateMsg = document.getElementById('rotate-status-msg');
+
+    if (btnOpenRotate) {
+      btnOpenRotate.addEventListener('click', () => {
+        document.getElementById('rotate-curr-pass').value = '';
+        document.getElementById('rotate-new-pass').value = '';
+        document.getElementById('rotate-confirm-pass').value = '';
+        rotateMsg.style.display = 'none';
+        modalRotate.classList.add('active');
+      });
+    }
+
+    const closeRotateModal = () => {
+      modalRotate.classList.remove('active');
+    };
+
+    if (btnCloseRotate) btnCloseRotate.addEventListener('click', closeRotateModal);
+    if (btnCancelRotate) btnCancelRotate.addEventListener('click', closeRotateModal);
+
+    if (btnSubmitRotate) {
+      btnSubmitRotate.addEventListener('click', async () => {
+        const currP = document.getElementById('rotate-curr-pass').value.trim();
+        const newP = document.getElementById('rotate-new-pass').value.trim();
+        const confP = document.getElementById('rotate-confirm-pass').value.trim();
+
+        if (!currP || !newP || !confP) {
+          showRotateMsg('Заполните все поля', false);
+          return;
+        }
+        if (newP !== confP) {
+          showRotateMsg('Новые пароли не совпадают', false);
+          return;
+        }
+        if (newP.length < 10) {
+          showRotateMsg('Новый пароль должен содержать от 10 символов', false);
+          return;
+        }
+
+        btnSubmitRotate.disabled = true;
+        btnSubmitRotate.textContent = 'Обновление кластера...';
+        rotateMsg.style.display = 'none';
+
+        try {
+          const res = await api('/api/admin/rotate_master_secret', 'POST', {
+            current_password: currP,
+            new_password: newP
+          });
+
+          if (res.success) {
+            showRotateMsg(res.message || 'Пароль успешно обновлен!', true);
+            if (res.token) {
+              localStorage.setItem('davida_token', res.token);
+            }
+            setTimeout(() => {
+              closeRotateModal();
+              btnSubmitRotate.disabled = false;
+              btnSubmitRotate.textContent = 'Обновить на всех серверах';
+            }, 1800);
+          } else {
+            showRotateMsg(res.error || 'Ошибка при смене пароля', false);
+            btnSubmitRotate.disabled = false;
+            btnSubmitRotate.textContent = 'Обновить на всех серверах';
+          }
+        } catch (err) {
+          showRotateMsg(err.message || 'Сетевая ошибка', false);
+          btnSubmitRotate.disabled = false;
+          btnSubmitRotate.textContent = 'Обновить на всех серверах';
+        }
+      });
+    }
+
+    function showRotateMsg(text, isSuccess) {
+      rotateMsg.textContent = text;
+      rotateMsg.style.display = 'block';
+      if (isSuccess) {
+        rotateMsg.style.background = 'rgba(16, 185, 129, 0.15)';
+        rotateMsg.style.color = '#10b981';
+        rotateMsg.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+      } else {
+        rotateMsg.style.background = 'rgba(244, 63, 94, 0.15)';
+        rotateMsg.style.color = '#f43f5e';
+        rotateMsg.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+      }
+    }
+  </script>
+  <!-- Modal Rotate Master Password -->
+  <div class="modal" id="modal-rotate-password">
+    <div class="modal-card" style="max-width: 440px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 20px;">🔑</span>
+          <h3 style="font-size: 16px; font-weight: 700; color: #fff;">Смена мастер-пароля кластера</h3>
+        </div>
+        <button class="modal-close" id="btn-close-rotate-modal">&times;</button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px; padding: 20px 24px;">
+        <p style="font-size: 12px; color: var(--text-muted); line-height: 1.4;">
+          Новый пароль синхронно обновится на всех 3 активных узлах (CH, EE, DE), в учетных записях ОС и в веб-панели.
+        </p>
+        <div class="form-group">
+          <label class="form-label" style="font-size: 12px; color: var(--text-muted); margin-bottom: 6px; display: block;">Текущий мастер-пароль</label>
+          <input type="password" id="rotate-curr-pass" class="form-input" style="width: 100%; padding: 10px 12px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 8px; color: #fff;" placeholder="Введите текущий пароль" autocomplete="current-password">
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-size: 12px; color: var(--text-muted); margin-bottom: 6px; display: block;">Новый мастер-пароль</label>
+          <input type="password" id="rotate-new-pass" class="form-input" style="width: 100%; padding: 10px 12px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 8px; color: #fff;" placeholder="Минимум 10 символов" autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-size: 12px; color: var(--text-muted); margin-bottom: 6px; display: block;">Повторите новый пароль</label>
+          <input type="password" id="rotate-confirm-pass" class="form-input" style="width: 100%; padding: 10px 12px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 8px; color: #fff;" placeholder="Повторите новый пароль" autocomplete="new-password">
+        </div>
+        <div id="rotate-status-msg" style="display: none; padding: 10px 14px; border-radius: 8px; font-size: 12px;"></div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px; border-top: 1px solid var(--border);">
+        <button class="btn btn-secondary" id="btn-cancel-rotate">Отмена</button>
+        <button class="btn btn-primary" id="btn-submit-rotate">Обновить на всех серверах</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
