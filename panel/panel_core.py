@@ -1360,7 +1360,11 @@ def get_user_uuid(username: str) -> str:
             import json
             with open(users_file, "r") as f:
                 data = json.load(f)
-                return data.get(username, "")
+                if username in data:
+                    return data[username]
+                for k, v in data.items():
+                    if k.lower() == username.lower():
+                        return v
     except Exception:
         pass
     return ""
@@ -1617,9 +1621,29 @@ def add_new_user(username: str, pin: str = None) -> str:
     if pin:
         set_user_pin(username, issued_pin)
 
-    script_path = "/root/autoXRAY_davida_custom.sh"
-    if os.path.exists(script_path):
-        subprocess.run(["bash", script_path, "sync", DOMAIN], check=False)
+    # Ensure UUID exists in users.json
+    try:
+        users_file = Path(f"{ETC_DIR}/users.json")
+        uuids = {}
+        if users_file.exists():
+            uuids = json.loads(users_file.read_text(encoding="utf-8"))
+        if username not in uuids:
+            import uuid
+            uuids[username] = str(uuid.uuid4())
+            tmp_p = Path(f"/tmp/u_panel_{os.getpid()}.json")
+            tmp_p.write_text(json.dumps(uuids, indent=2), encoding="utf-8")
+            subprocess.run(["sudo", "cp", str(tmp_p), str(users_file)], check=False)
+            subprocess.run(["sudo", "chown", "root:vpndavida", str(users_file)], check=False)
+            subprocess.run(["sudo", "chmod", "640", str(users_file)], check=False)
+            tmp_p.unlink(missing_ok=True)
+    except Exception as e:
+        print(f"Error ensuring UUID for {username}: {e}")
+
+    # Run sync via sudo /usr/local/bin/autoXRAY_davida_custom or fallback
+    for script_path in ["/usr/local/bin/autoXRAY_davida_custom", "/root/autoXRAY_davida_custom.sh"]:
+        if os.path.exists(script_path):
+            subprocess.run(["sudo", script_path, "sync", DOMAIN], check=False)
+            break
     # Return only to the authenticated create-user request; only the PBKDF2 hash is persisted.
     return issued_pin
 

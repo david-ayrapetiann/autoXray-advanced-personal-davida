@@ -236,8 +236,14 @@ write_landing_page() {
     user_uuid=$(jq -r --arg u "$username" '.[$u] // empty' "$ETC_DIR/users.json")
   fi
   if [[ -z "$user_uuid" ]]; then
-    echo -e "${RED}❌ Нельзя публиковать legacy-ссылку: у пользователя $username нет capability UUID.${NC}"
-    return 1
+    user_uuid=$(xray uuid 2>/dev/null || cat /proc/sys/kernel/random/uuid)
+    if [[ -f "$ETC_DIR/users.json" ]]; then
+      jq --arg u "$username" --arg id "$user_uuid" '.[$u] = $id' "$ETC_DIR/users.json" > /tmp/u_autoxray.json && mv /tmp/u_autoxray.json "$ETC_DIR/users.json"
+    else
+      echo "{\"$username\": \"$user_uuid\"}" > "$ETC_DIR/users.json"
+    fi
+    chown root:vpndavida "$ETC_DIR/users.json" 2>/dev/null || true
+    chmod 640 "$ETC_DIR/users.json" 2>/dev/null || true
   fi
   local sub_filename="${username}_${user_uuid}.json"
   local sub_url="https://$DOMAIN/sub/$sub_filename"
@@ -1815,7 +1821,7 @@ OLDER_TEMPLATE
 </div>
 
 <!-- Main Centered Presentation -->
-<main id="personalPage" class="locked" data-username="__USERNAME__" data-happ-android-url="__HAPP_ANDROID_URL__" data-telegram-url="https://t.me/your_support" data-max-url="https://max.ru/your_support">
+<main id="personalPage" class="locked" data-username="__USERNAME_TECHNICAL__" data-happ-android-url="__HAPP_ANDROID_URL__" data-telegram-url="https://t.me/your_support" data-max-url="https://max.ru/your_support">
 
   <div class="identity">
     <!-- Kicker -->
@@ -3802,6 +3808,7 @@ NESTED_GUIDE_DISABLED
   [[ "$username" == "ExampleUser2" ]] && display_name='⁎❁⁕❁※~(´◡`)~※❁⁕❁⁎'
   PAGE_TITLE_SAFE="$display_name · $SUBSCRIPTION_NAME"
   export PAGE_USERNAME="$display_name"
+  export PAGE_USERNAME_TECHNICAL="$username"
   export PAGE_TITLE_SAFE
   export PAGE_SUB_URL="$sub_url"
   export PAGE_HAPP_ADD_URL="$happ_add_url"
@@ -3835,6 +3842,7 @@ s = p.read_text(encoding="utf-8")
 repl = {
     "__TITLE__": html.escape(os.environ.get("PAGE_TITLE_SAFE", "")),
     "__USERNAME__": html.escape(os.environ.get("PAGE_USERNAME", "")),
+    "__USERNAME_TECHNICAL__": html.escape(os.environ.get("PAGE_USERNAME_TECHNICAL", "")),
     "__SUB_URL__": html.escape(os.environ.get("PAGE_SUB_URL", "")),
     "__HAPP_ADD_URL__": html.escape(os.environ.get("PAGE_HAPP_ADD_URL", "")),
     "__SUBSCRIPTION_NAME__": html.escape(os.environ.get("PAGE_SUBSCRIPTION_NAME", "")),
