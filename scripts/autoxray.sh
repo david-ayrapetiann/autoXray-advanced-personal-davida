@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # autoXRAY minimal fork by ChatGPT for David
-# v11: add profile-update-interval=3 and append reminder clone profile.
+# v12: reminder clone profile removed (was injected as a fake first profile).
 # Only VLESS RAW REALITY VISION + simple named subscription pages + nginx-based link tracking.
 
 GRN='\033[1;32m'
@@ -3888,8 +3888,7 @@ EOF
 make_user_subscription() {
   local username="$1"
   local sub_dir="$WEB_PATH/sub"
-  local reminder_remark user_uuid
-  reminder_remark="ВНИМАНИЕ: обновляю ключи — напишите администратору!"
+  local user_uuid
   mkdir -p "$sub_dir"
 
   # Lookup personal UUID from users.json
@@ -3911,7 +3910,6 @@ data = json.loads(sub_file.read_text(encoding='utf-8'))
 
 user_uuid = '$user_uuid'
 uname = '$username'
-reminder = '$reminder_remark'
 
 if isinstance(data, list) and len(data) > 0:
     for idx, profile in enumerate(data):
@@ -3921,11 +3919,6 @@ if isinstance(data, list) and len(data) > 0:
                     for u in v.get('users', []):
                         u['id'] = user_uuid
                         u['email'] = uname
-
-    reminder_prof = json.loads(json.dumps(data[0]))
-    reminder_prof['remarks'] = reminder
-    # Prepend so the notice appears above the first real node.
-    data.insert(0, reminder_prof)
 
 output_data = json.dumps(data, ensure_ascii=False, indent=2) + '\n'
 if '$user_uuid':
