@@ -9,10 +9,12 @@ WorkingDirectory=/opt/vpn-panel
 ExecStart=/usr/bin/python3 /opt/vpn-panel/davida_core.py
 Restart=always
 RestartSec=3
-NoNewPrivileges=yes
+# NOTE: no NoNewPrivileges here on purpose — the panel performs user management
+# through `sudo /usr/local/bin/... deluser|sync`, and NoNewPrivileges blocks sudo.
 ProtectSystem=full
 PrivateTmp=yes
-ReadWritePaths=/etc/vpn-cluster /opt/vpn-panel
+# The panel must write the Xray client list when users are added/removed.
+ReadWritePaths=/etc/vpn-cluster /opt/vpn-panel /usr/local/etc/xray
 
 [Install]
 WantedBy=multi-user.target

@@ -3897,7 +3897,12 @@ make_user_subscription() {
   fi
   if [[ -z "$user_uuid" ]]; then
     user_uuid=$(xray uuid 2>/dev/null || cat /proc/sys/kernel/random/uuid)
+    local _perms _owner
+    _perms=$(stat -c '%a' "$ETC_DIR/users.json" 2>/dev/null || echo 640)
+    _owner=$(stat -c '%U:%G' "$ETC_DIR/users.json" 2>/dev/null || echo root:root)
     jq --arg u "$username" --arg id "$user_uuid" '.[$u] = $id' "$ETC_DIR/users.json" > /tmp/u.json && mv /tmp/u.json "$ETC_DIR/users.json"
+    chmod "$_perms" "$ETC_DIR/users.json" 2>/dev/null || true
+    chown "$_owner" "$ETC_DIR/users.json" 2>/dev/null || true
   fi
 
   # Inject personal UUID and email into all profiles, preserving core remarks
@@ -4039,9 +4044,63 @@ add_user() {
   grep -qxF "$username" "$USERS_FILE" || echo "$username" >> "$USERS_FILE"
   write_happ_guide_page
   sync_user "$username"
+  ensure_xray_client "$username"
   echo -e "${GRN}✅ Пользователь добавлен:${NC} $username"
   echo -e "${BLU}Страница:${NC} https://$DOMAIN/nnect/$username.html"
   echo -e "${BLU}Подписка:${NC} https://$DOMAIN/sub/$username.json"
+}
+
+ensure_xray_client() {
+  local username="$1"
+  # Make sure the user has a client in the Xray config; validate before reload.
+  python3 - "$username" "$ETC_DIR" "$XRAY_DIR" <<'DAVIDA_ENSURE_CLIENT_PY'
+import json, os, subprocess, sys, tempfile
+
+username, etc_dir, xray_dir = sys.argv[1:4]
+users_json = os.path.join(etc_dir, 'users.json')
+cfg_path = os.path.join(xray_dir, 'config.json')
+if not os.path.exists(cfg_path) or not os.path.exists(users_json):
+    sys.exit(0)
+
+uuid = json.load(open(users_json, encoding='utf-8')).get(username, '')
+if not uuid:
+    sys.exit(0)
+
+cfg = json.load(open(cfg_path, encoding='utf-8'))
+changed = False
+for inbound in cfg.get('inbounds', []):
+    clients = inbound.get('settings', {}).get('clients')
+    if not isinstance(clients, list):
+        continue
+    if any(c.get('email') == username or c.get('id') == uuid for c in clients):
+        continue
+    flow = next((c.get('flow') for c in clients if c.get('flow')), 'xtls-rprx-vision')
+    clients.append({'id': uuid, 'flow': flow, 'email': username})
+    changed = True
+
+if not changed:
+    sys.exit(0)
+
+fd, tmp_cfg = tempfile.mkstemp(suffix='.json')
+with os.fdopen(fd, 'w', encoding='utf-8') as fh:
+    json.dump(cfg, fh, ensure_ascii=False, indent=2)
+test = subprocess.run(['xray', 'run', '-test', '-c', tmp_cfg], capture_output=True, text=True)
+os.unlink(tmp_cfg)
+if test.returncode != 0:
+    sys.exit('XRAY_CONFIG_INVALID: ' + (test.stdout + test.stderr).strip()[-200:])
+
+st = os.stat(cfg_path)
+tmp = cfg_path + '.tmp'
+with open(tmp, 'w', encoding='utf-8') as fh:
+    json.dump(cfg, fh, ensure_ascii=False, indent=2)
+os.chmod(tmp, st.st_mode & 0o7777)
+os.chown(tmp, st.st_uid, st.st_gid)
+os.replace(tmp, cfg_path)
+r = subprocess.run(['systemctl', 'restart', 'xray'], capture_output=True, text=True)
+if r.returncode != 0:
+    sys.exit('XRAY_RESTART_FAILED: ' + (r.stderr or '').strip()[-200:])
+print('xray client ensured: ' + username)
+DAVIDA_ENSURE_CLIENT_PY
 }
 
 del_user() {
@@ -4051,11 +4110,86 @@ del_user() {
     echo -e "${RED}❌ Некорректный username.${NC}"
     exit 1
   fi
+
+  # One pass: build the new state, validate the Xray config on a throwaway copy,
+  # and only then write anything. Root-owned paths, so run this via sudo.
+  python3 - "$username" "$ETC_DIR" "$XRAY_DIR" "$USERS_FILE" "$WEB_PATH" <<'DAVIDA_DEL_USER_PY'
+import glob, json, os, subprocess, sys, tempfile
+
+username, etc_dir, xray_dir, users_file, web_path = sys.argv[1:6]
+cfg_path = os.path.join(xray_dir, 'config.json')
+
+def load(path, default=None):
+    if not os.path.exists(path):
+        return default
+    with open(path, encoding='utf-8') as fh:
+        return json.load(fh)
+
+def save(path, data):
+    st = os.stat(path)
+    tmp = path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as fh:
+        json.dump(data, fh, ensure_ascii=False, indent=2)
+    os.chmod(tmp, st.st_mode & 0o7777)
+    os.chown(tmp, st.st_uid, st.st_gid)
+    os.replace(tmp, path)
+
+users_json_path = os.path.join(etc_dir, 'users.json')
+pwds_path = os.path.join(etc_dir, 'passwords.json')
+
+users_json = load(users_json_path) or {}
+pwds = load(pwds_path) or {}
+cfg = load(cfg_path)
+
+uuid = users_json.pop(username, '') or ''
+pwds.pop(username, None)
+
+touched = False
+if cfg is not None:
+    for inbound in cfg.get('inbounds', []):
+        clients = inbound.get('settings', {}).get('clients')
+        if isinstance(clients, list):
+            kept = [c for c in clients if c.get('email') != username and (not uuid or c.get('id') != uuid)]
+            if len(kept) != len(clients):
+                inbound['settings']['clients'] = kept
+                touched = True
+
+if touched:
+    fd, tmp_cfg = tempfile.mkstemp(suffix='.json')
+    with os.fdopen(fd, 'w', encoding='utf-8') as fh:
+        json.dump(cfg, fh, ensure_ascii=False, indent=2)
+    test = subprocess.run(['xray', 'run', '-test', '-c', tmp_cfg], capture_output=True, text=True)
+    os.unlink(tmp_cfg)
+    if test.returncode != 0:
+        sys.exit('XRAY_CONFIG_INVALID: ' + (test.stdout + test.stderr).strip()[-200:])
+
+if touched:
+    save(cfg_path, cfg)
+if os.path.exists(users_json_path):
+    save(users_json_path, users_json)
+if os.path.exists(pwds_path):
+    save(pwds_path, pwds)
+
+for rel in ('nnect/' + username + '.html', 'sub/' + username + '.json'):
+    p = os.path.join(web_path, rel)
+    if os.path.exists(p):
+        os.unlink(p)
+for p in glob.glob(os.path.join(web_path, 'sub', username + '_*.json')):
+    os.unlink(p)
+
+if touched:
+    r = subprocess.run(['systemctl', 'restart', 'xray'], capture_output=True, text=True)
+    if r.returncode != 0:
+        sys.exit('XRAY_RESTART_FAILED: ' + (r.stderr or '').strip()[-200:])
+DAVIDA_DEL_USER_PY
+
+  if [[ $? -ne 0 ]]; then
+    echo -e "${RED}⚠️ Удаление не выполнено.${NC}"
+    exit 1
+  fi
+
   grep -vxF "$username" "$USERS_FILE" > "$USERS_FILE.tmp" || true
   mv "$USERS_FILE.tmp" "$USERS_FILE"
-  rm -f "$WEB_PATH/nnect/$username.html"
-  rm -f "$WEB_PATH/sub/$username.json"
-  rm -f "$WEB_PATH/sub/${username}_*.json"
   echo -e "${GRN}✅ Пользователь удалён:${NC} $username"
 }
 

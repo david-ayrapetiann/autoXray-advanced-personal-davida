@@ -1642,7 +1642,7 @@ def add_new_user(username: str, pin: str = None) -> str:
     # Run sync via sudo /usr/local/bin/autoXRAY_davida_custom or fallback
     for script_path in ["/usr/local/bin/autoXRAY_davida_custom", "/root/autoXRAY_davida_custom.sh"]:
         if os.path.exists(script_path):
-            subprocess.run(["sudo", script_path, "sync", DOMAIN], check=False)
+            subprocess.run(["sudo", script_path, "sync", WEB_PATH.name], check=False)
             break
     # Return only to the authenticated create-user request; only the PBKDF2 hash is persisted.
     return issued_pin
@@ -1650,29 +1650,31 @@ def add_new_user(username: str, pin: str = None) -> str:
 def delete_user(username: str) -> bool:
     username = username.strip()
     users = get_users_list()
-    if username not in users:
+    leftovers = (
+        get_user_uuid(username)
+        or (WEB_PATH / "sub" / f"{username}.json").exists()
+        or (WEB_PATH / "nnect" / f"{username}.html").exists()
+    )
+    if username not in users and not leftovers:
         raise ValueError(f"Пользователь '{username}' не найден")
 
-    new_users = [u for u in users if u != username]
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        for u in new_users:
-            f.write(f"{u}\n")
+    # sub/, nnect/, users.json and the Xray config are root-owned: do the work
+    # through the management script with sudo instead of raw filesystem calls.
+    script_path = "/usr/local/bin/autoXRAY_davida_custom"
+    if not os.path.exists(script_path):
+        raise ValueError(f"Скрипт управления не найден: {script_path}")
 
-    (WEB_PATH / "sub" / f"{username}.json").unlink(missing_ok=True)
-    for p in (WEB_PATH / "sub").glob(f"{username}_*.json"):
-        p.unlink(missing_ok=True)
-    (WEB_PATH / "nnect" / f"{username}.html").unlink(missing_ok=True)
-
-    pwds = load_passwords()
-    if username in pwds:
-        del pwds[username]
-        save_passwords(pwds)
+    res = subprocess.run(["sudo", script_path, "deluser", WEB_PATH.name, username],
+                         capture_output=True, text=True)
+    if res.returncode != 0:
+        err = (res.stderr or res.stdout or "").strip().splitlines()
+        raise ValueError("Удаление не выполнено: " + (err[-1] if err else "неизвестная ошибка"))
     return True
 
 def run_sync() -> str:
     script_path = "/root/autoXRAY_davida_custom.sh"
     if os.path.exists(script_path):
-        res = subprocess.run(["bash", script_path, "sync", DOMAIN], capture_output=True, text=True)
+        res = subprocess.run(["bash", script_path, "sync", WEB_PATH.name], capture_output=True, text=True)
         return res.stdout
     return "Local sync completed"
 
