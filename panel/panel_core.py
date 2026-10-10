@@ -1610,41 +1610,24 @@ def add_new_user(username: str, pin: str = None) -> str:
     if not re.match(r"^[A-Za-z0-9_-]{2,32}$", username):
         raise ValueError("Имя пользователя должно содержать 2-32 символов (буквы, цифры, дефис, подчеркивание)")
 
-    users = get_users_list()
-    if username in users:
+    if username in get_users_list():
         raise ValueError(f"Пользователь '{username}' уже существует")
 
-    with open(USERS_FILE, "a", encoding="utf-8") as f:
-        f.write(f"{username}\n")
+    # Creation lives in the management script: users.txt, subscription files,
+    # landing page, the users.json UUID and the Xray client (all root-owned).
+    script_path = "/usr/local/bin/autoXRAY_davida_custom"
+    if not os.path.exists(script_path):
+        raise ValueError(f"Скрипт управления не найден: {script_path}")
+
+    res = subprocess.run(["sudo", script_path, "adduser", WEB_PATH.name, username],
+                         capture_output=True, text=True)
+    if res.returncode != 0:
+        err = (res.stderr or res.stdout or "").strip().splitlines()
+        raise ValueError("Не удалось создать пользователя: " + (err[-1] if err else "неизвестная ошибка"))
 
     issued_pin = str(pin).strip() if pin else get_user_pin(username)
     if pin:
         set_user_pin(username, issued_pin)
-
-    # Ensure UUID exists in users.json
-    try:
-        users_file = Path(f"{ETC_DIR}/users.json")
-        uuids = {}
-        if users_file.exists():
-            uuids = json.loads(users_file.read_text(encoding="utf-8"))
-        if username not in uuids:
-            import uuid
-            uuids[username] = str(uuid.uuid4())
-            tmp_p = Path(f"/tmp/u_panel_{os.getpid()}.json")
-            tmp_p.write_text(json.dumps(uuids, indent=2), encoding="utf-8")
-            subprocess.run(["sudo", "cp", str(tmp_p), str(users_file)], check=False)
-            subprocess.run(["sudo", "chown", "root:vpndavida", str(users_file)], check=False)
-            subprocess.run(["sudo", "chmod", "640", str(users_file)], check=False)
-            tmp_p.unlink(missing_ok=True)
-    except Exception as e:
-        print(f"Error ensuring UUID for {username}: {e}")
-
-    # Run sync via sudo /usr/local/bin/autoXRAY_davida_custom or fallback
-    for script_path in ["/usr/local/bin/autoXRAY_davida_custom", "/root/autoXRAY_davida_custom.sh"]:
-        if os.path.exists(script_path):
-            subprocess.run(["sudo", script_path, "sync", WEB_PATH.name], check=False)
-            break
-    # Return only to the authenticated create-user request; only the PBKDF2 hash is persisted.
     return issued_pin
 
 def delete_user(username: str) -> bool:

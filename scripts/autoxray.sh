@@ -4188,8 +4188,13 @@ DAVIDA_DEL_USER_PY
     exit 1
   fi
 
+  local _uperms _uowner
+  _uperms=$(stat -c '%a' "$USERS_FILE" 2>/dev/null || echo 600)
+  _uowner=$(stat -c '%U:%G' "$USERS_FILE" 2>/dev/null || echo root:root)
   grep -vxF "$username" "$USERS_FILE" > "$USERS_FILE.tmp" || true
   mv "$USERS_FILE.tmp" "$USERS_FILE"
+  chmod "$_uperms" "$USERS_FILE" 2>/dev/null || true
+  chown "$_uowner" "$USERS_FILE" 2>/dev/null || true
   echo -e "${GRN}✅ Пользователь удалён:${NC} $username"
 }
 
