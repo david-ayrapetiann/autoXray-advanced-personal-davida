@@ -1781,6 +1781,32 @@ OLDER_TEMPLATE
 </head>
 <body>
 
+<style>
+  /* Mobile profile: the WebGL canvas now runs at 30 fps; the real cost was
+     backdrop-filter re-sampling the animated canvas on every frame. */
+  @media (max-width: 768px), (pointer: coarse) {
+    #aurora { filter: brightness(1.32) saturate(1.06); transform: translateY(1vh) scale(1.05); }
+    .atmo-bottom { filter: blur(8px); }
+    .atmo-wash { filter: blur(28px); opacity: .8; }
+    .lower-haze {
+      -webkit-backdrop-filter: none; backdrop-filter: none;
+      background: linear-gradient(180deg, transparent 0%, rgba(2,5,13,.10) 30%, rgba(5,8,22,.44) 100%);
+    }
+    .pin-gate-overlay { -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); background: rgba(4,6,11,.82); }
+    .pin-gate-card { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(18,28,44,.93); }
+    .btn, .config-panel, .pwd-panel, .support-link, .modal, .tuner-card {
+      -webkit-backdrop-filter: none; backdrop-filter: none;
+    }
+    #grain { height: 100%; animation: none; }
+    .bottom-fade {
+      background: linear-gradient(180deg, transparent 0%, transparent 54%,
+        rgba(0,0,0,.10) 66%, rgba(0,0,0,.52) 84%, rgba(0,0,0,.94) 100%);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #grain, .light-orb, .btn, .toast { animation: none !important; transition: none !important; }
+  }
+</style>
 <!-- WebGL Aurora Borealis GPU Canvas -->
 <canvas id="aurora" width="890" height="716"></canvas>
 <div class="vignette"></div>
@@ -2331,6 +2357,13 @@ function initWebGL(gl) {
 
   const FRAG = `
     precision mediump float;
+
+#ifdef MOBILE
+    #define FBM_OCTAVES 3
+#else
+    #define FBM_OCTAVES 4
+#endif
+
     uniform vec2  uRes;
     uniform float uTime;
     uniform float uHue;
@@ -2361,7 +2394,7 @@ function initWebGL(gl) {
     float fbm(vec2 p) {
       float v = 0.0, a = 0.5;
       mat2 m = mat2(1.6, 1.2, -1.2, 1.6);
-      for (int i = 0; i < 4; i++) { v += a * vnoise(p); p = m * p; a *= 0.5; }
+      for (int i = 0; i < FBM_OCTAVES; i++) { v += a * vnoise(p); p = m * p; a *= 0.5; }
       return v;
     }
 
@@ -2494,6 +2527,12 @@ function initWebGL(gl) {
       vec3 aur = vec3(0.0);
 
       // 1. Soft stretched background layer (растянуто по фону)
+#ifdef MOBILE
+      // Mobile: один мягкий слой + две шторы вместо пяти — вдвое меньше работы на пиксель.
+      aur += auroraSoftBackground(uv, 0.48, 0.20, 3.0, 0.022, 11.0, px * 0.6) * 0.55;
+      aur += auroraLayer(uv, 0.70, 0.19, 4.2, 0.028,  9.0, px * 0.70) * 0.86;
+      aur += auroraLayer(uv, 0.56, 0.13, 6.0, 0.046, 27.0, px * 1.30) * 0.58;
+#else
       aur += auroraSoftBackground(uv, 0.38, 0.18, 2.5, 0.018, 7.0, px * 0.4) * 0.55;
       aur += auroraSoftBackground(uv, 0.52, 0.22, 3.2, 0.028, 21.0, px * 0.8) * 0.50;
 
@@ -2501,6 +2540,7 @@ function initWebGL(gl) {
       aur += auroraLayer(uv, 0.72, 0.20, 4.0, 0.026, 13.7, px * 0.55) * 0.82;
       aur += auroraLayer(uv, 0.60, 0.15, 5.5, 0.040,  0.0, px * 1.00) * 0.92;
       aur += auroraLayer(uv, 0.50, 0.11, 7.0, 0.058, 31.4, px * 1.60) * 0.56;
+#endif
       col += aur;
 
       // Distant mountain ridge in haze
@@ -2544,7 +2584,8 @@ function initWebGL(gl) {
   }
 
   const vs = compile(gl.VERTEX_SHADER, VERT);
-  const fs = compile(gl.FRAGMENT_SHADER, FRAG);
+  const isMobileGL = window.innerWidth < 768 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const fs = compile(gl.FRAGMENT_SHADER, (isMobileGL ? "#define MOBILE 1\n" : "") + FRAG);
   if (!vs || !fs) { canvas.remove(); return; }
 
   const prog = gl.createProgram();
@@ -2585,14 +2626,23 @@ function initWebGL(gl) {
   };
 
   const isMobile = window.innerWidth < 768 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  const scale = isMobile ? 0.50 : Math.min(window.devicePixelRatio || 1, 1.0) * 0.75;
+  const scale = isMobile ? 0.58 : Math.min(window.devicePixelRatio || 1, 1.0) * 0.75;
 
   function resize() {
-    canvas.width  = Math.max(2, Math.round(window.innerWidth  * scale));
-    canvas.height = Math.max(2, Math.round(window.innerHeight * scale));
-    gl.viewport(0, 0, canvas.width, canvas.height);
+    const w = Math.max(2, Math.round(window.innerWidth  * scale));
+    const h = Math.max(2, Math.round(window.innerHeight * scale));
+    // The mobile URL bar fires resize on every scroll; skip 1-2px noise so the GPU buffer is not reallocated.
+    if (Math.abs(w - canvas.width) < 2 && Math.abs(h - canvas.height) < 2) return;
+    canvas.width  = w;
+    canvas.height = h;
+    gl.viewport(0, 0, w, h);
   }
-  window.addEventListener("resize", resize, { passive: true });
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(resize, 150);
+  }, { passive: true });
+  window.addEventListener("orientationchange", () => setTimeout(resize, 350), { passive: true });
   resize();
 
   let isInputActive = false;
@@ -2616,11 +2666,15 @@ function initWebGL(gl) {
   let last = performance.now(), t = 0;
   let lastCssUpdate = 0;
   let lastRenderTime = 0;
+  const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const minFrameMs = reduceMotion ? 1000 : (isMobile ? 33 : 0);
+  let rafId = null;
 
   function frame(now) {
-    // When typing digits, throttle RAF to 30fps to guarantee 0 input lag
-    if (isInputActive && (now - lastRenderTime < 33)) {
-      requestAnimationFrame(frame);
+    // 30 fps on phones, 1 fps with reduced motion, and a hard 30 fps while typing.
+    const budget = isInputActive ? 33 : minFrameMs;
+    if (budget && (now - lastRenderTime < budget)) {
+      rafId = requestAnimationFrame(frame);
       return;
     }
     lastRenderTime = now;
@@ -2661,9 +2715,9 @@ function initWebGL(gl) {
     gl.uniform1f(uStarLoc, p.stars);
 
     gl.drawArrays(gl.TRIANGLES, 0, 3);
-    requestAnimationFrame(frame);
+    rafId = requestAnimationFrame(frame);
   }
-  requestAnimationFrame(frame);
+  rafId = requestAnimationFrame(frame);
 }
 
 /* Film grain is handled via hardware-accelerated CSS */
